@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 
+from app import extract, summarize
 from app.fhir_client import RESULT_PARAMS, FhirError, FhirNotFound, fhir
 from app.models import Packet, PatientPage, PatientSummary
 
@@ -19,6 +20,7 @@ RESERVED_PARAMS = frozenset({"limit", "offset"})
 async def lifespan(app: FastAPI):
     yield
     fhir.close()
+    summarize.close()
 
 
 app = FastAPI(title="FHIR Clinical Summarize", lifespan=lifespan)
@@ -106,9 +108,42 @@ def get_patient(patient_id: str) -> PatientSummary:
     return PatientSummary.from_resource(resource)
 
 
-@app.get("/patients/{patient_id}/packet", response_model=Packet)
+@app.get(
+    "/patients/{patient_id}/packet",
+    response_model=Packet,
+    # Optional Fact fields are dropped when they equal their default, so a packet
+    # carries no `status: null` noise and no `count: 1` on undeduplicated facts.
+    # Packet's own fields have no defaults, so none of them can be dropped.
+    response_model_exclude_defaults=True,
+)
 def get_packet(patient_id: str) -> Packet:
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+    """Assemble a source-cited clinical packet for one patient.
+    The order matters: facts, statuses and source references are all settled
+    before the model is called, and the model's output is only ever assigned to
+    `summary`. A summary failure therefore costs the prose, not the evidence.
+    This service assembles evidence. It never issues an authorization decision.
+    """
+    try:
+        # Read the patient first so a bad id fails as 404 rather than as an
+        # empty packet, which an empty record would otherwise be indistinguishable from.
+        fhir.get_patient(patient_id)
+        condition_resources = fhir.get_conditions(patient_id)
+        medication_resources = fhir.get_medications(patient_id)
+    except FhirNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"No patient {patient_id}") from exc
+    except FhirError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    conditions, medications = extract.build_facts(condition_resources, medication_resources)
+    summary = summarize.write_summary(extract.to_prompt_facts(conditions, medications))
+
+    return Packet(
+        patient_id=patient_id,
+        conditions=conditions,
+        medications=medications,
+        summary=summary,
+        missing=extract.build_missing(conditions, medications),
+    )
 
 
 # The dashboard is served by this app rather than a separate dev server so it is

@@ -7,20 +7,40 @@ MRN_TYPE_CODE = "MR"
 
 
 class Fact(BaseModel):
-    """One clinical fact, always traceable to the FHIR resource it came from."""
+    """One clinical fact, always traceable to the FHIR resource it came from.
+
+    The route serializes packets with exclude_defaults, so the optional fields
+    below only appear when they carry information: no `status: null` noise, and
+    no `count: 1` on the overwhelming majority of facts that were never
+    deduplicated. Fields without a default (display, source) are always present.
+    """
 
     display: str
     source: str = Field(description='FHIR reference, e.g. "Condition/1a2b"')
     status: str | None = None
     date: str | None = None
+    count: int = Field(
+        default=1,
+        description="how many records collapsed into this fact; 60 cisplatin orders is "
+        "clinically meaningful and would otherwise be lost to deduplication. Omitted "
+        "when 1.",
+    )
 
 
 class Packet(BaseModel):
+    """The deliverable: facts a reviewer can check, plus prose they can scan.
+
+    None of these fields carry a default, so exclude_defaults never drops one.
+    An empty `medications` list and an empty `summary` are both meaningful --
+    "no medications on file" and "the model had nothing to say" are findings,
+    not absences.
+    """
+
     patient_id: str
-    conditions: list[Fact] = []
-    medications: list[Fact] = []
-    summary: str = ""
-    missing: list[str] = []
+    conditions: list[Fact]
+    medications: list[Fact]
+    summary: str
+    missing: list[str]
 
 
 class PatientSummary(BaseModel):

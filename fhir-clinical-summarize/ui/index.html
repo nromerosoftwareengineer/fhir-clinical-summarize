@@ -147,6 +147,62 @@
   @media (max-width: 620px) {
     .hide-sm { display: none; }
   }
+
+  /* -- packet panel -- */
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+  .tabs button { padding: 5px 13px; font-size: 13px; }
+  .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .summary-box {
+    background: var(--accent-soft); border-left: 3px solid var(--accent);
+    padding: 12px 14px; border-radius: 4px; font-size: 14px; line-height: 1.55;
+  }
+  .sect-h {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); font-weight: 600; margin: 20px 0 8px;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-size: 12px; padding: 3px 10px; border-radius: 999px;
+    background: var(--danger-soft); border: 1px solid var(--danger); color: var(--danger);
+  }
+  .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+    border: 1px solid var(--border); color: var(--muted);
+  }
+  .badge.active { background: #e6f3ea; border-color: #9cc8ad; color: #2b6a42; }
+  .badge.rep { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .badge.active {
+      background: #1d3225; border-color: #3e6a4d; color: #9ad3ae;
+    }
+  }
+  :root[data-theme="dark"] .badge.active {
+    background: #1d3225; border-color: #3e6a4d; color: #9ad3ae;
+  }
+  a.src {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; color: var(--muted); text-decoration: none;
+  }
+  a.src:hover { color: var(--accent); text-decoration: underline; }
+
+  pre.json {
+    margin: 0; max-height: 460px; overflow: auto;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 14px; font-size: 12.5px; line-height: 1.6;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .jk { color: #1f5f8f; }  /* key */
+  .js { color: #2b6a42; }  /* string */
+  .jn { color: #96551c; }  /* number */
+  .jb { color: #7d3a94; }  /* true / false / null */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .jk { color: #86bde6; }
+    :root:not([data-theme="light"]) .js { color: #9ad3ae; }
+    :root:not([data-theme="light"]) .jn { color: #e0b080; }
+    :root:not([data-theme="light"]) .jb { color: #ce9ee0; }
+  }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -315,6 +371,142 @@ function Results({ page, selected, onSelect, offset, onPage, busy }) {
   );
 }
 
+// Colour the JSON without pulling in a highlighting library: one pass over the
+// pretty-printed text, wrapping keys, strings, numbers and literals in spans.
+function highlightJson(value) {
+  const text = JSON.stringify(value, null, 2);
+  const pattern =
+    /("(?:\\.|[^"\\])*"\s*:)|("(?:\\.|[^"\\])*")|(-?\d+(?:\.\d+)?)|(true|false|null)/g;
+  const out = [];
+  let last = 0;
+  let match;
+  let key = 0;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > last) out.push(text.slice(last, match.index));
+    const cls = match[1] ? "jk" : match[2] ? "js" : match[3] ? "jn" : "jb";
+    out.push(<span key={key++} className={cls}>{match[0]}</span>);
+    last = match.index + match[0].length;
+  }
+  out.push(text.slice(last));
+  return out;
+}
+
+// Where a reviewer goes to check a citation. The packet carries references like
+// "Condition/abc123"; this turns them into links to the record itself.
+const FHIR_BASE = "http://localhost:8080/fhir";
+
+function FactTable({ title, facts }) {
+  if (!facts) return null;
+  return (
+    <>
+      <div className="sect-h">{title} ({facts.length})</div>
+      {facts.length === 0 ? (
+        <div className="count">none on file</div>
+      ) : (
+        <table>
+          <tbody>
+            {facts.map((fact) => (
+              <tr key={fact.source} style={{ cursor: "default" }}>
+                <td>{fact.display}</td>
+                <td style={{ width: 92 }}>
+                  {fact.status && (
+                    <span className={"badge" + (fact.status === "active" ? " active" : "")}>
+                      {fact.status}
+                    </span>
+                  )}
+                </td>
+                <td style={{ width: 92 }} className="mono">{fact.date || "-"}</td>
+                <td style={{ width: 54 }}>
+                  {/* count is omitted by the API unless records were collapsed */}
+                  {fact.count > 1 && <span className="badge rep">x{fact.count}</span>}
+                </td>
+                <td style={{ width: 150 }}>
+                  <a
+                    className="src"
+                    href={`${FHIR_BASE}/${fact.source}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`Open ${fact.source} on the FHIR server`}
+                  >
+                    {fact.source}
+                  </a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
+  );
+}
+
+function PacketPanel({ result }) {
+  const [view, setView] = useState("packet");
+  const [copied, setCopied] = useState(false);
+  if (!result) return null;
+
+  if (result.error) {
+    return <div className="err" style={{ marginTop: 16 }}>{result.error}</div>;
+  }
+
+  const packet = result.data;
+  const copy = () => {
+    navigator.clipboard.writeText(JSON.stringify(packet, null, 2)).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 18 }}>
+      <div className="tabs">
+        <button className={view === "packet" ? "on" : ""} onClick={() => setView("packet")}>
+          Packet
+        </button>
+        <button className={view === "json" ? "on" : ""} onClick={() => setView("json")}>
+          JSON
+        </button>
+        {view === "json" && (
+          <button onClick={copy} style={{ marginLeft: "auto" }}>
+            {copied ? "Copied" : "Copy"}
+          </button>
+        )}
+      </div>
+
+      {view === "json" ? (
+        <pre className="json"><code>{highlightJson(packet)}</code></pre>
+      ) : (
+        <>
+          {packet.summary ? (
+            <div className="summary-box">{packet.summary}</div>
+          ) : (
+            <div className="count">No summary available (the model did not return one).</div>
+          )}
+
+          {packet.missing.length > 0 && (
+            <>
+              <div className="sect-h">Not on file</div>
+              <div className="chips">
+                {packet.missing.map((note) => (
+                  <span className="chip" key={note}>{note}</span>
+                ))}
+              </div>
+            </>
+          )}
+
+          <FactTable title="Conditions" facts={packet.conditions} />
+          <FactTable title="Medications" facts={packet.medications} />
+        </>
+      )}
+
+      <div className="meta">
+        {packet.conditions.length} conditions · {packet.medications.length} medications ·
+        built in {result.ms} ms · every row links to the record it came from
+      </div>
+    </div>
+  );
+}
+
 function Detail({ patient, packet, onPacket, busy }) {
   if (!patient) return null;
   return (
@@ -327,11 +519,14 @@ function Detail({ patient, packet, onPacket, busy }) {
         <dt>Source</dt><dd className="mono">{patient.source}</dd>
       </dl>
       <div className="actions">
-        <button onClick={() => onPacket(patient.id)} disabled={busy}>
-          Build clinical packet
+        <button className="primary" onClick={() => onPacket(patient.id)} disabled={busy}>
+          {busy ? "Building..." : "Build clinical packet"}
         </button>
+        <span className="count">
+          First build takes ~20s while the model loads, then a few seconds.
+        </span>
       </div>
-      {packet && <div className="query">{packet}</div>}
+      <PacketPanel result={packet} />
     </div>
   );
 }
@@ -378,16 +573,18 @@ function App() {
   const loadPacket = useCallback(async (patientId) => {
     setBusy(true);
     setPacket(null);
+    const started = performance.now();
     try {
       const response = await fetch(`${API}/patients/${patientId}/packet`);
       const body = await response.json();
+      const ms = Math.round(performance.now() - started);
       setPacket(
         response.ok
-          ? JSON.stringify(body, null, 2)
-          : `HTTP ${response.status}: ${body.detail || "request failed"}`
+          ? { data: body, ms }
+          : { error: `HTTP ${response.status}: ${body.detail || "request failed"}` }
       );
     } catch (err) {
-      setPacket(`Could not reach the API: ${err.message}`);
+      setPacket({ error: `Could not reach the API: ${err.message}` });
     } finally {
       setBusy(false);
     }
