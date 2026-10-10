@@ -1,0 +1,68 @@
+# Production overlay for a single host.
+#
+# Adds the API, the model server and a reverse proxy to the HAPI + Postgres stack
+# in docker-compose.yml. Both files are used together, so the base file stays the
+# one a developer runs locally:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Only nginx publishes ports. HAPI still publishes 8080 because Compose appends
+# rather than replaces a port list across files -- the host firewall is what
+# keeps it closed, so open only 80 and 443 on the VM.
+
+services:
+  hapi-fhir:
+    environment:
+      # JAVA_TOOL_OPTIONS, not JAVA_OPTS: the image is distroless with an
+      # exec-form entrypoint, so nothing is there to read JAVA_OPTS.
+      - JAVA_TOOL_OPTIONS=-Xmx3g
+
+  api:
+    build: .
+    image: fhir-summarize:local
+    container_name: fhir-api
+    environment:
+      # Service names resolve over Compose's internal DNS.
+      - FHIR_BASE_URL=http://hapi-fhir:8080/fhir
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      # CPU inference is several times slower than on a laptop with Metal.
+      - REQUEST_TIMEOUT_S=${REQUEST_TIMEOUT_S:-180}
+      - LOG_JSON=true
+      # The FHIR base a browser can reach, used only for the dashboard's
+      # citation links. nginx proxies /fhir/ on this host, so set PUBLIC_URL to
+      # the site's own origin (e.g. https://fhir.example.com). Left empty, the
+      # dashboard renders references as text instead of dead links.
+      - FHIR_PUBLIC_URL=${PUBLIC_URL:+${PUBLIC_URL}/fhir}
+    depends_on:
+      - hapi-fhir
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      # The model is ~2 GB. On a named volume it survives restarts instead of
+      # being re-downloaded on every boot.
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # deploy/nginx.conf serves plain HTTP and works immediately.
+      # Switch to deploy/nginx-tls.conf once certbot has issued certificates:
+      #   NGINX_CONF=./deploy/nginx-tls.conf docker compose ... up -d
+      - ${NGINX_CONF:-./deploy/nginx.conf}:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  ollama-models:

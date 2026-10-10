@@ -428,6 +428,45 @@ copy a hospital's clinical data into a side table) and what keeps `source` meani
 
 ---
 
+## Deployment
+
+The service is container-ready; see **[deploy/README.md](deploy/README.md)** for the
+Azure plan.
+
+```bash
+docker build -t fhir-summarize:local .
+docker run --rm -p 8001:8000 \
+  -e FHIR_BASE_URL=http://host.docker.internal:8080/fhir \
+  -e FHIR_PUBLIC_URL=http://localhost:8080/fhir \
+  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+  fhir-summarize:local
+```
+
+Four things were built for this rather than assumed:
+
+- **Nothing is baked in.** Every setting is an environment variable with a working
+  local default, so the same image runs on a laptop and in a cluster.
+- **`/health` and `/ready` are different endpoints.** Liveness checks nothing
+  external, because restarting the process cannot fix an unreachable FHIR server;
+  readiness reports each dependency so an operator can see which one is at fault.
+  The model is reported but not required — a packet without prose is still evidence.
+- **`FHIR_AUTH_SCOPE` switches on Entra ID auth** via `DefaultAzureCredential`,
+  which resolves to a container's managed identity in Azure and to `az login`
+  locally. No secret is ever stored. `azure-identity` is an optional extra, so a
+  local HAPI deployment does not carry cloud SDKs.
+- **`FHIR_PUBLIC_URL` is separate from `FHIR_BASE_URL`.** The dashboard links each
+  citation to the record it came from, and behind private networking the address
+  the service uses is not one a browser can resolve. Unset, the dashboard renders
+  references as text rather than dead links.
+
+`LOG_JSON=true` (the image default) switches logging to JSON lines so Log Analytics
+or App Insights parses the fields instead of grepping strings.
+
+The open items — persisting Ollama's model cache, converting the loader to Azure's
+NDJSON `$import`, private endpoints, and Bicep — are listed in `deploy/README.md`.
+The Azure CLI commands there are the plan; they have not been run against a live
+subscription.
+
 ## Scope notes
 
 The assignment asks for one endpoint. The patient search endpoints and the React dashboard

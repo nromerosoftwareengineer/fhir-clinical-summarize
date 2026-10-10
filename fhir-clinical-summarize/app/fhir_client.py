@@ -8,14 +8,23 @@ facts is app/extract.py's job, so the two concerns stay separately testable.
 
 from __future__ import annotations
 
+import logging
+import time
+
 import httpx
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Result parameters that shape the response rather than filter it. They are not
 # listed as search parameters in the CapabilityStatement, so they need their own
 # allowance when validating caller input.
 RESULT_PARAMS = frozenset({"_sort"})
+
+# Renew an access token this many seconds before it actually expires, so a
+# request never goes out holding one that lapses in flight.
+TOKEN_REFRESH_MARGIN_S = 300
 
 
 class FhirError(Exception):
@@ -26,10 +35,48 @@ class FhirNotFound(FhirError):
     """The requested resource does not exist (or was deleted)."""
 
 
+class _EntraTokenProvider:
+    """Caches an Entra ID (Azure AD) access token for a managed FHIR service.
+
+    Uses DefaultAzureCredential, which resolves to the container's managed
+    identity in Azure and to the developer's `az login` session locally, so no
+    client secret is ever stored or passed in. Imported lazily because
+    azure-identity is an optional extra: a local HAPI server needs no auth at
+    all, and the base install should not carry the dependency.
+    """
+
+    def __init__(self, scope: str) -> None:
+        try:
+            from azure.identity import DefaultAzureCredential
+        except ImportError as exc:  # pragma: no cover - depends on the extra
+            raise FhirError(
+                "FHIR_AUTH_SCOPE is set but azure-identity is not installed; "
+                'install the extra with: pip install ".[azure]"'
+            ) from exc
+
+        self._scope = scope
+        self._credential = DefaultAzureCredential()
+        self._token: str | None = None
+        self._expires_at: float = 0.0
+
+    def token(self) -> str:
+        if self._token is None or time.time() >= self._expires_at - TOKEN_REFRESH_MARGIN_S:
+            access = self._credential.get_token(self._scope)
+            self._token = access.token
+            self._expires_at = float(access.expires_on)
+            logger.info("acquired FHIR access token", extra={"scope": self._scope})
+        return self._token
+
+
 class FhirClient:
     """A client for one FHIR server."""
 
-    def __init__(self, base_url: str | None = None, timeout: float | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str | None = None,
+        timeout: float | None = None,
+        auth_scope: str | None = None,
+    ) -> None:
         self._client = httpx.Client(
             base_url=base_url or settings.fhir_base_url,
             timeout=timeout or settings.request_timeout_s,
@@ -40,14 +87,28 @@ class FhirClient:
         # server beats hardcoding a list that drifts when the server changes.
         self._search_params: dict[str, frozenset[str]] = {}
 
+        # Anonymous unless a scope is configured. Constructing the provider is
+        # deferred to the first request so an unreachable metadata service
+        # cannot stop the process from starting.
+        scope = auth_scope if auth_scope is not None else settings.fhir_auth_scope
+        self._auth_scope = scope
+        self._tokens: _EntraTokenProvider | None = None
+
     def close(self) -> None:
         self._client.close()
 
     # -- low level ---------------------------------------------------------
 
+    def _auth_headers(self) -> dict[str, str]:
+        if not self._auth_scope:
+            return {}
+        if self._tokens is None:
+            self._tokens = _EntraTokenProvider(self._auth_scope)
+        return {"Authorization": f"Bearer {self._tokens.token()}"}
+
     def _get(self, url: str, params: dict | list | None = None) -> dict:
         try:
-            response = self._client.get(url, params=params)
+            response = self._client.get(url, params=params, headers=self._auth_headers())
         except httpx.HTTPError as exc:
             raise FhirError(f"could not reach the FHIR server: {exc!r}") from exc
 

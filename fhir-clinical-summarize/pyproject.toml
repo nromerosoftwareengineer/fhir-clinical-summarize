@@ -17,6 +17,12 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.6",
 ]
+# Only needed when FHIR_AUTH_SCOPE is set, i.e. against a managed FHIR service
+# that authenticates with Entra ID. A local HAPI container needs no auth, so the
+# base install stays free of cloud SDKs.
+azure = [
+    "azure-identity>=1.17",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

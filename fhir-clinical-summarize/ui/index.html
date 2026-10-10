@@ -209,7 +209,7 @@
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useCallback } = React;
+const { useState, useCallback, useEffect } = React;
 
 // The API is served from the same origin as this page.
 const API = "";
@@ -391,11 +391,7 @@ function highlightJson(value) {
   return out;
 }
 
-// Where a reviewer goes to check a citation. The packet carries references like
-// "Condition/abc123"; this turns them into links to the record itself.
-const FHIR_BASE = "http://localhost:8080/fhir";
-
-function FactTable({ title, facts }) {
+function FactTable({ title, facts, fhirBase }) {
   if (!facts) return null;
   return (
     <>
@@ -421,15 +417,22 @@ function FactTable({ title, facts }) {
                   {fact.count > 1 && <span className="badge rep">x{fact.count}</span>}
                 </td>
                 <td style={{ width: 150 }}>
-                  <a
-                    className="src"
-                    href={`${FHIR_BASE}/${fact.source}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={`Open ${fact.source} on the FHIR server`}
-                  >
-                    {fact.source}
-                  </a>
+                  {/* Linked only when /config supplied a browser-reachable FHIR
+                      base. Behind private networking there may not be one, and a
+                      dead link is worse than plain text for verifying a citation. */}
+                  {fhirBase ? (
+                    <a
+                      className="src"
+                      href={`${fhirBase}/${fact.source}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`Open ${fact.source} on the FHIR server`}
+                    >
+                      {fact.source}
+                    </a>
+                  ) : (
+                    <span className="src">{fact.source}</span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -440,7 +443,7 @@ function FactTable({ title, facts }) {
   );
 }
 
-function PacketPanel({ result }) {
+function PacketPanel({ result, fhirBase }) {
   const [view, setView] = useState("packet");
   const [copied, setCopied] = useState(false);
   if (!result) return null;
@@ -494,8 +497,8 @@ function PacketPanel({ result }) {
             </>
           )}
 
-          <FactTable title="Conditions" facts={packet.conditions} />
-          <FactTable title="Medications" facts={packet.medications} />
+          <FactTable title="Conditions" facts={packet.conditions} fhirBase={fhirBase} />
+          <FactTable title="Medications" facts={packet.medications} fhirBase={fhirBase} />
         </>
       )}
 
@@ -507,7 +510,7 @@ function PacketPanel({ result }) {
   );
 }
 
-function Detail({ patient, packet, onPacket, busy }) {
+function Detail({ patient, packet, onPacket, busy, fhirBase }) {
   if (!patient) return null;
   return (
     <div className="card">
@@ -526,7 +529,7 @@ function Detail({ patient, packet, onPacket, busy }) {
           First build takes ~20s while the model loads, then a few seconds.
         </span>
       </div>
-      <PacketPanel result={packet} />
+      <PacketPanel result={packet} fhirBase={fhirBase} />
     </div>
   );
 }
@@ -535,12 +538,22 @@ const BLANK = { gender: "", birthdate: "", dateOp: "ge" };
 
 function App() {
   const [form, setForm] = useState(BLANK);
+  // Runtime settings come from the API rather than being baked into this
+  // page, so the same build works locally and behind private networking.
+  const [serverConfig, setServerConfig] = useState({});
   const [page, setPage] = useState(null);
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState(null);
   const [packet, setPacket] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API}/config`)
+      .then((response) => (response.ok ? response.json() : {}))
+      .then(setServerConfig)
+      .catch(() => setServerConfig({}));
+  }, []);
 
   const search = useCallback(
     async (nextOffset) => {
@@ -639,7 +652,13 @@ function App() {
         busy={busy}
       />
 
-      <Detail patient={selected} packet={packet} onPacket={loadPacket} busy={busy} />
+      <Detail
+        patient={selected}
+        packet={packet}
+        onPacket={loadPacket}
+        busy={busy}
+        fhirBase={serverConfig.fhir_base_url}
+      />
     </div>
   );
 }
