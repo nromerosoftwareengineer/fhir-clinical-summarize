@@ -20,6 +20,8 @@ can tell "restart this" from "stop routing here".
 | `FHIR_AUTH_SCOPE` | unset | Set to `https://<ws>-<svc>.fhir.azurehealthcareapis.com/.default` to authenticate with Entra ID. Unset means anonymous, which is what a local HAPI expects |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Or any OpenAI-compatible endpoint, with a small change in `summarize.py` |
 | `OLLAMA_MODEL` | `gemma3:4b` | |
+| `SUMMARY_DB_URL` | unset | Postgres holding one cached summary per patient, invalidated by a hash of that patient's facts. Unset means no cache and no database connection: every packet generates fresh. `postgresql://hapi:hapi@db:5432/summaries` inside Compose, `...@localhost:55432/...` for a host-run uvicorn |
+| `SUMMARY_DB_TIMEOUT_S` | `3` | Connect timeout. A cache must never be what makes a packet slow, so it gives up fast and the request proceeds uncached |
 | `REQUEST_TIMEOUT_S` | `60` | Raise it if inference runs on CPU |
 | `LOG_JSON` | `true` in the image | JSON lines, so Log Analytics parses fields |
 | `LOG_LEVEL` | `INFO` | |

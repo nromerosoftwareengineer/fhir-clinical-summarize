@@ -61,6 +61,12 @@ ollama pull gemma3:4b
 # 3. Python environment
 python -m venv .venv && ./.venv/bin/pip install -e ".[dev]"
 
+# 3b. Summary cache (optional -- skip it and every packet generates fresh).
+# The database is created automatically on a fresh volume; an existing one
+# needs it once by hand, because postgres only runs init hooks when empty.
+docker compose exec db psql -U hapi -d postgres -c "CREATE DATABASE summaries OWNER hapi;"
+export SUMMARY_DB_URL="postgresql://hapi:hapi@localhost:55432/summaries"
+
 # 4. Synthetic data (1.3 GB, gitignored -- not in this repo)
 mkdir -p data && cd data
 curl -LO https://synthetichealth.github.io/synthea-sample-data/downloads/synthea_sample_data_fhir_r4_sep2019.zip
@@ -270,28 +276,74 @@ What is measured so far, same facts through `write_summary`, Apple M2 / 8 GB:
 | Resident at `num_ctx=8192` | 3.0 GB | 3.6 GB |
 | Placement | 100% GPU | 22% / 78% CPU/GPU |
 
-Two caveats that this switch does **not** yet answer:
+Two things the switch costs, both measured rather than assumed:
 
 - At `num_ctx=8192` gemma3:4b no longer fits entirely in Metal alongside HAPI and Postgres,
   so 22% of it runs on CPU. It is still fast warm, but it is no longer GPU-resident.
-- On one synthetic case gemma3:4b wrote *"presents with a history of stroke, osteoporosis,
-  and hypertension"* for facts that were all in `active_conditions`, where llama3.2:3b wrote
-  *"is currently being treated for"*. That is the present-as-history inverse of the error the
-  system prompt guards against, and it is the same class of problem already recorded in the
-  hand-review notes below. llama3.2:3b is not clean here either — given an active
-  `"Obesity (since 1997-08-26)"` it wrote *"has a history of obesity dating back to"*.
-- **gemma3:4b invented a dosing frequency.** Given `active_medications: ["Lisinopril 10 mg"]`
-  it wrote *"is prescribed Lisinopril 10 mg **daily**"*. Nothing in the payload carries a
-  frequency; `extract.py` never emits one. llama3.2:3b wrote *"is currently taking Lisinopril
-  10 mg"*. Reproducible across runs at `temperature: 0`. This one is a fabrication, not a
-  clarity problem — it breaks the system prompt's "never invent" rule in a field a
-  prior-authorization reviewer would act on, and it is the strongest argument for running
-  the hand review before this default ships anywhere real.
+- It is the one model of the two that **failed a mechanical check** on the 10-patient
+  review: a single-sentence answer where the prompt requires two. See
+  [Hand review of 10 patients](#hand-review-of-10-patients) — `llama3.2:3b` scored 10/10,
+  gemma3:4b 9/10, and sources resolved 126/126 under both.
 
-> **TODO:** run both models through `scripts/eval_sample.py` over the same 10 patients and
-> record JSON validity rate, decision-language count, and the active-vs-history framing.
-> `temperature` is already 0, so the model is the only variable:
-> `OLLAMA_MODEL=llama3.2:3b ./.venv/bin/python -m scripts.eval_sample`
+One claim worth retracting, since it drove the decision to look harder: on a *synthetic*
+one-medication payload gemma3:4b turned `"Lisinopril 10 mg"` into "prescribed Lisinopril
+10 mg **daily**", a frequency nothing upstream emits. It reproduces on that payload, but it
+**did not recur anywhere in the 10-patient run** — zero invented frequencies and zero
+ungrounded doses for both models on real records. `eval_sample.py` checks for it on every
+run, so a regression would be caught rather than assumed absent.
+
+---
+
+## Summary cache
+
+Inference is the entire cost of a packet. On the busiest patient in the sample set
+(`5e4b559d`, 26 facts) the FHIR fetch and all the deterministic shaping take **0.21 s** and
+the model takes **31 s**. So one summary per patient is cached in Postgres, invalidated by a
+hash of that patient's facts:
+
+| | measured |
+|---|---|
+| Cache hit (warm) | **0.7–0.9 s** |
+| Generate + store | 8–40 s, depending on payload size and whether the model is resident |
+| Unavoidable per request (FHIR + shaping) | 0.21 s |
+
+**What the hash covers:** the shaped prompt payload from `to_prompt_facts`, and nothing else.
+Not the raw FHIR resources — those carry `meta.lastUpdated` and `meta.versionId`, which HAPI
+rewrites whenever a bundle is reloaded, so a raw hash would report "changed" on reloads where
+nothing clinically moved. The lists are sorted before hashing, because `_newest_first` is a
+stable sort over an unsorted FHIR result and the order of same-date facts is not a clinical
+fact.
+
+**What it deliberately does not cover: the model.** Switching `OLLAMA_MODEL` invalidates
+nothing, so each patient keeps the previous model's prose until their data changes. Data
+changes constantly; the model changes when an operator decides. `python -m
+scripts.cache_admin --clear` is the lever for that case, and the model that wrote each row is
+recorded in a column so a surprising summary can be traced to its author.
+
+**Every failure is non-fatal.** Database down, table missing, write rejected: each logs a
+warning and the packet is served with a freshly generated summary. Verified by pointing
+`SUMMARY_DB_URL` at a dead port — two warnings, summary still produced. An optimisation that
+can take the service down with it is a liability, which is the same rule `summarize.py`
+already follows for the model.
+
+Separate database, same Postgres container. HAPI owns 60 tables in its own database and runs
+its own migrations on every startup; a separate database is a hard boundary for free, and
+sharing the volume means `docker compose down -v` wipes cache and records together — correct,
+since cached prose must never outlive the records it describes.
+
+**The cache is always consulted; there is no per-request opt-out.** A row for this patient
+whose `fact_hash` still matches is returned as-is, and anything else -- no row, or a row from
+a different clinical picture -- generates fresh prose and upserts it under the new hash. A
+caller who wants the model rather than the cache wants the patient's data to look new, which
+is what `summary_cache.invalidate()` says: `eval_sample.py` calls it per patient before
+requesting their packet, so a run measures the model through the ordinary request path rather
+than through a bypass the route would otherwise never use.
+
+> **Note for this machine:** the container publishes Postgres on **55432**, not 5432. A
+> native Postgres already owns the host's 5432 here and answers before Colima's forward does,
+> so a host client aiming at 5432 authenticates against the wrong server and fails with
+> `password authentication failed for user "hapi"` while HAPI itself is perfectly happy on
+> the internal network.
 
 ---
 
@@ -335,23 +387,55 @@ on any machine — otherwise the review numbers below would mean nothing.
 
 ### Hand review of 10 patients
 
-> **TODO — not yet done.** `scripts/eval_sample.py` is still a stub. The review should report,
-> for each of 10 patients: (1) is the summary fair — no invented conditions, no approve/deny
-> language, correct about what is active; (2) do the sources resolve to a real record that
-> matches the `display`. Report as counts, e.g. "10/10 sources resolved; 9/10 summaries fair",
-> plus the failure modes observed.
->
-> Three patients already identified as worth including, each covering a different edge:
-> - `3f8be6b0-...` — everything resolved/stopped (tests the status handling)
-> - `632b7c1c-...` — two active conditions, **zero** medications (tests `missing`)
-> - `5e4b559d-...` — 14 conditions, 164 medication orders (tests deduplication)
+`scripts/eval_sample.py` runs a pinned sample through the packet endpoint, scores what a
+string comparison can settle, and stages the rest on a worksheet with a blank verdict line
+per patient. There is deliberately **no LLM judge**: grading the prose with a second model
+would undercut the one claim this project makes.
 
-One reproducible prose issue already observed: on the busiest patient the summary opens
-*"has a history of stroke, non-small cell carcinoma … with current active conditions
-including stroke"* — framing the same conditions as both history and current. The facts it
-named were all genuinely in `active_medications` (checked against the prompt payload), so it
-is a clarity problem rather than a hallucination, but it is the kind of thing only hand
-review catches.
+The sample is three pinned edge cases plus a seeded fill, so two runs differ only by the
+model under test. All three edge patients are on the server but absent from
+`data/patient_ids.txt`, which is the 301-vs-299 gap — they are pinned by full id:
+
+| patient | edge it covers | verified |
+|---|---|---|
+| `3f8be6b0-…` | every condition and medication resolved/stopped | 0 active, 3 past conditions, 1 past med |
+| `632b7c1c-…` | active conditions, **zero** medications | 2 active, 0 meds, `missing` fires |
+| `5e4b559d-…` | deduplication under load | 14 conditions, **164 med orders → 12 distinct** |
+
+Mechanically checked: every `Fact.source` is **read back from FHIR** and re-extracted to
+confirm it still carries the `display` the packet cites it for; doses in the prose must
+appear in the payload; dosing *frequencies* must not appear at all, since nothing upstream
+emits one; no approve/deny/authorize language; two sentences, no bullets.
+
+**Results, same 10 patients, `temperature: 0`:**
+
+| | `llama3.2:3b` | `gemma3:4b` |
+|---|---|---|
+| Sources resolved | **126/126** | **126/126** |
+| Passed every mechanical check | **10/10** | **9/10** |
+| Invented doses / frequencies | 0 | 0 |
+| Decision language | 0 | 0 |
+| Active conditions framed as history *(flagged for review)* | 5/10 patients | 7/10 patients |
+
+The single mechanical failure is `gemma3:4b` on `a166eeaa-…`, which answered in **one**
+sentence where the prompt requires two, and framed the one active condition as history:
+
+> *"The patient presents with a history of chronic sinusitis dating back to March 8, 2001,
+> alongside a past medical history including viral sinusitis…"*
+
+`llama3.2:3b` on the same payload: *"has a **current diagnosis** of chronic sinusitis, which
+has been ongoing since 2001…"* — two sentences, correct tense.
+
+**The active-as-history framing is a prompt problem, not a model problem.** Both models do it
+at comparable rates, so swapping models does not fix it; the last line of the system prompt
+guards the past→present direction and nothing guards present→past. It is reported but never
+failed on, because it is sometimes *right*: this cohort contains an `active` miscarriage with
+a 1990 onset, where "history of" is the honest reading and the FHIR status is what is wrong.
+That is exactly the call a string check cannot make, which is why the worksheet leaves it to
+a person.
+
+> **Still open:** the `Verdict` lines on both worksheets are blank. The counts above are the
+> mechanical half; a clinician reading the 20 summaries is the half that decides.
 
 ---
 
@@ -432,14 +516,18 @@ app/
   fhir_client.py   HTTP to HAPI: reads, searches, paging, capability lookup
   extract.py       FHIR -> facts + sources + dedupe + missing + prompt shaping (no LLM)
   summarize.py     Ollama structured output; never raises
+  summary_cache.py one cached summary per patient, keyed on a hash of their facts
   main.py          FastAPI routes
 scripts/
   load_bundle.py   load one bundle, PUT semantics, narrated step by step
   load_synthea.py  load a reproducible random sample of N bundles
-  eval_sample.py   10-patient hand review  [STUB]
+  cache_admin.py   --stats / --clear for the summary cache
+  eval_sample.py   10-patient hand review: resolves every citation against FHIR,
+                   scores the checkable, stages the judgment calls. No LLM judge
   show_conditions.sh   spot-check one patient's conditions and sources from the CLI
 tests/
   test_extract.py  20 tests over the deterministic layer
+  test_summary_cache.py  11 tests over the cache key -- no Postgres, no model
 ui/index.html      single-file React dashboard
 docker-compose.yml HAPI FHIR 8.12 + Postgres 14
 ```

@@ -179,6 +179,21 @@ $C exec ollama ollama list
 
 It lands on the `ollama-models` named volume and survives restarts.
 
+### Create the summary-cache database
+
+`deploy/init-summaries.sql` handles this automatically on a **fresh** volume. An existing
+volume -- one that already has HAPI data -- needs it once by hand, because the postgres image
+only runs its init hooks when the data directory is empty:
+
+```bash
+$C exec db psql -U hapi -d postgres -c "CREATE DATABASE summaries OWNER hapi;"
+$C restart api        # ensure_schema() creates the table on startup
+```
+
+Confirm with `curl -s localhost/ready | jq .checks.cache` -- expect `"ok"`. A `cache` of
+`unavailable` is **not** fatal: packets are served uncached, just slowly. Leave
+`SUMMARY_DB_URL` empty to turn the cache off entirely.
+
 ## 10. Load patient data
 
 ```bash
@@ -455,6 +470,11 @@ $C exec ollama ollama ps                 # UNTIL reads "Forever"
 An empty `ollama ps` means nothing is resident yet: the model loads on the first
 packet and stays from then on, so build one packet after `up -d` and every
 request after it is inference only.
+
+With the summary cache enabled this cost is paid **once per patient** rather than once per
+request: a second request for the same patient skips the model entirely and returns in well
+under a second, until that patient's clinical facts change. Warming the handful of patients
+a demo will actually visit turns the worst-case first impression into the best case.
 
 A resident gemma3:4b holds **3.6 GB** at `num_ctx=8192`. That is inside the
 ~12 GiB the stack needs on a 16 GiB host, but on a smaller instance trade it back

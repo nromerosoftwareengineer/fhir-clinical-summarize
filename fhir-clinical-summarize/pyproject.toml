@@ -10,6 +10,10 @@ dependencies = [
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
     "httpx>=0.27",
+    # Summary cache only. The service runs without a database -- SUMMARY_DB_URL
+    # unset disables the cache -- but the driver ships a binary wheel, so there
+    # is no build cost to having it installed either way.
+    "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]

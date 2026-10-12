@@ -25,8 +25,22 @@ services:
       POSTGRES_DB: hapi
       POSTGRES_USER: hapi
       POSTGRES_PASSWORD: hapi
+    ports:
+      # Published so a host uvicorn can reach the summary cache. The container is
+      # reachable as db:5432 from inside the compose network, which is what the
+      # prod overlay's api service uses -- this mapping is only for host access.
+      #
+      # 55432, not 5432: a native Postgres already owns the host's 5432 on this
+      # machine, and it answers before Colima's forward does, so a host client
+      # aiming at 5432 authenticates against the wrong server and fails with
+      # "password authentication failed for user hapi" while HAPI itself is
+      # perfectly happy on the internal network.
+      - "55432:5432"
     volumes:
       - hapi-postgres-data:/var/lib/postgresql/data
+      # Creates the `summaries` database, but only on a fresh volume -- see the
+      # file for what an existing volume needs instead.
+      - ./deploy/init-summaries.sql:/docker-entrypoint-initdb.d/10-summaries.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hapi -d hapi"]
       interval: 10s

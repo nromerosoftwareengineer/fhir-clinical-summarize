@@ -1,0 +1,18 @@
+-- Creates the database that holds the summary cache.
+--
+-- Mounted into the postgres container's /docker-entrypoint-initdb.d/, which the
+-- image runs ONLY when the data directory is empty. A fresh `docker compose up`
+-- therefore needs no manual step, while an existing volume -- one that already
+-- has HAPI's data in it -- needs this once by hand:
+--
+--   docker compose exec db psql -U hapi -d postgres \
+--     -c "CREATE DATABASE summaries OWNER hapi;"
+--
+-- Only the database is created here. app/summary_cache.ensure_schema() creates
+-- the table at startup, so there is no migration tool and no schema drift
+-- between this file and the code.
+--
+-- The cache deliberately shares the HAPI volume: `docker compose down -v` wipes
+-- both, which is correct, since cached prose must never outlive the records it
+-- describes.
+CREATE DATABASE summaries OWNER hapi;

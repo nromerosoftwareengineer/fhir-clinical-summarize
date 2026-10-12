@@ -111,6 +111,20 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml \
 It lands on the `ollama-models` named volume, so it survives restarts and
 rebuilds. Only `docker compose down -v` would remove it.
 
+## 5b. Create the summary-cache database
+
+Automatic on a fresh volume via `deploy/init-summaries.sql`; an existing volume needs it
+once by hand, since postgres only runs init hooks on an empty data directory:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  exec db psql -U hapi -d postgres -c "CREATE DATABASE summaries OWNER hapi;"
+```
+
+The table itself is created at startup. The cache is optional -- an unset or empty
+`SUMMARY_DB_URL` means every packet generates fresh, and a cache that is down is reported by
+`/ready` without failing anything.
+
 ## 6. Load patient data
 
 ```bash

@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import extract, summarize
+from app import extract, summarize, summary_cache
 from app.config import settings
 from app.fhir_client import RESULT_PARAMS, FhirError, FhirNotFound, fhir
 from app.logging_config import setup_logging
@@ -29,8 +29,10 @@ async def lifespan(app: FastAPI):
     logger.info(
         "starting",
         extra={"fhir_base_url": settings.fhir_base_url, "model": settings.ollama_model,
-               "fhir_auth": bool(settings.fhir_auth_scope)},
+               "fhir_auth": bool(settings.fhir_auth_scope),
+               "summary_cache": summary_cache.enabled()},
     )
+    summary_cache.ensure_schema()
     yield
     fhir.close()
     summarize.close()
@@ -76,6 +78,8 @@ def ready() -> JSONResponse:
         )
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         checks["model"] = f"unavailable: {exc!r}"
+
+    checks["cache"] = summary_cache.status()
 
     healthy = checks["fhir"] == "ok"
     return JSONResponse(
@@ -200,7 +204,8 @@ def get_packet(patient_id: str) -> Packet:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     conditions, medications = extract.build_facts(condition_resources, medication_resources)
-    summary = summarize.write_summary(extract.to_prompt_facts(conditions, medications))
+    prompt_facts = extract.to_prompt_facts(conditions, medications)
+    summary = summary_cache.get_or_write(prompt_facts, patient_id)
 
     return Packet(
         patient_id=patient_id,

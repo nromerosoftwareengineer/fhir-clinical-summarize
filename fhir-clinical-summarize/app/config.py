@@ -32,6 +32,20 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "gemma3:4b"
 
+    # -- summary cache ----------------------------------------------------
+    # Postgres holding one cached summary per patient, invalidated by a hash of
+    # the patient's shaped facts. Unset means no cache and no database
+    # connection at all: every packet generates fresh, which is the behaviour a
+    # laptop gets with no configuration. Local uvicorn wants the published port
+    #   postgresql://hapi:hapi@localhost:55432/summaries
+    # and the compose overlay reaches the same database over the internal network
+    #   postgresql://hapi:hapi@db:5432/summaries
+    summary_db_url: str | None = None
+
+    # A cache read or write must never be what makes a packet slow, so the
+    # connection gives up quickly and the request proceeds without the cache.
+    summary_db_timeout_s: float = 3.0
+
     # -- behaviour --------------------------------------------------------
     request_timeout_s: float = 60.0
 

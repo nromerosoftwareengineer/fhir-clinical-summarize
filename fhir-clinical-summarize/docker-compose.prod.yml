@@ -26,6 +26,10 @@ services:
       - FHIR_BASE_URL=http://hapi-fhir:8080/fhir
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:4b}
+      # Summary cache. Reached over the internal network, so no published port is
+      # involved here -- the 55432 mapping in docker-compose.yml is only for a
+      # host-run uvicorn. Set it to an empty string to turn the cache off.
+      - SUMMARY_DB_URL=${SUMMARY_DB_URL-postgresql://hapi:hapi@db:5432/summaries}
       # CPU inference is several times slower than on a laptop with Metal.
       - REQUEST_TIMEOUT_S=${REQUEST_TIMEOUT_S:-180}
       - LOG_JSON=true
