@@ -35,7 +35,7 @@ services:
       # aiming at 5432 authenticates against the wrong server and fails with
       # "password authentication failed for user hapi" while HAPI itself is
       # perfectly happy on the internal network.
-      - "55432:5432"
+      - "127.0.0.1:55432:5432"
     volumes:
       - hapi-postgres-data:/var/lib/postgresql/data
       # Creates the `summaries` database, but only on a fresh volume -- see the

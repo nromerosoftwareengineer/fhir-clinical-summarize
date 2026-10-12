@@ -13,8 +13,10 @@ cloud-agnostic and used unchanged -- only the provisioning differs from
 
 ## Instance sizing
 
-The stack needs ~11 GiB of RAM: HAPI's 3 GB heap, Postgres, Ollama with the
-model loaded (~3 GB), plus the API, nginx and the OS.
+The stack needs ~12 GiB of RAM: HAPI's 3 GB heap, Postgres, Ollama with
+gemma3:4b loaded (~3.6 GB at `num_ctx=8192`), plus the API, nginx and the OS.
+The summary cache adds a table to the existing Postgres, not a service, so it
+costs no extra RAM.
 
 | Instance | vCPU | RAM | Notes |
 |---|---|---|---|
@@ -483,6 +485,103 @@ for the default:
 ```bash
 OLLAMA_KEEP_ALIVE=5m $C up -d ollama
 ```
+
+---
+
+## Upgrading an existing instance
+
+For an instance already running an older revision -- moving to `gemma3:4b` and adding the
+summary cache. Order matters in two places, noted below.
+
+```bash
+ssh -i ~/.ssh/$KEY.pem ubuntu@$IP
+cd ~/fhir-clinical-summarize
+C="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+
+git pull
+```
+
+**1. Recreate `db` first.** `docker-compose.yml` changed (a loopback-only port binding and
+the init-script mount), so Compose replaces the container. HAPI restarts with it because of
+`depends_on`; the data is on the `hapi-postgres-data` named volume and survives.
+
+```bash
+$C up -d db
+until $C exec db pg_isready -U hapi -d hapi; do sleep 3; done
+```
+
+**2. Create the cache database before the API starts.** `deploy/init-summaries.sql` only
+runs on a *fresh* volume, and this one has HAPI's data in it, so the hook will not fire:
+
+```bash
+$C exec db psql -U hapi -d postgres -c "CREATE DATABASE summaries OWNER hapi;"
+```
+
+Harmless to re-run -- it fails with `already exists` and changes nothing. Do this *before*
+the API boots, so `ensure_schema()` finds the database on its first attempt instead of
+logging a warning and running uncached until the next restart.
+
+**3. Pull the new model.** ~3.3 GB; the old one can stay for now.
+
+```bash
+$C exec ollama ollama pull gemma3:4b
+```
+
+**4. Rebuild the API image.** `psycopg` is a new dependency, so a plain `restart` would run
+the old image and the cache would report `unavailable` no matter what else is right. This is
+the step that is easy to skip:
+
+```bash
+$C up -d --build api
+```
+
+**5. Verify.** All three dependencies, then a real packet:
+
+```bash
+curl -s localhost/ready | jq .
+# {"status":"ready","checks":{"fhir":"ok","model":"ok","cache":"ok"}}
+
+ID=$(curl -s "localhost/patients?limit=1" | jq -r '.patients[0].id')
+time curl -s -o /dev/null "localhost/patients/$ID/packet"   # cold: generates
+time curl -s -o /dev/null "localhost/patients/$ID/packet"   # warm: cache hit
+```
+
+The second call should return in well under a second. `cache: ok` with a slow second call
+means the row is not being written -- check `$C logs api | grep "summary cache"`.
+
+Nothing supplies `SUMMARY_DB_URL` by hand here: `docker-compose.prod.yml` defaults it to
+`postgresql://hapi:hapi@db:5432/summaries` over the internal network. The `127.0.0.1:55432`
+binding in the base file is only for a laptop running uvicorn outside Docker, and binding it
+to loopback keeps Postgres off the instance's public interface regardless of what the
+security group allows.
+
+### Reclaiming the old model
+
+Optional. Keep it if you still want `scripts/eval_sample.py --model llama3.2:3b` comparisons:
+
+```bash
+$C exec ollama ollama list
+$C exec ollama ollama rm llama3.2:3b      # frees ~2 GB on the 128 GB volume
+```
+
+### Rolling back
+
+The cache is additive, so turning it off needs no code change:
+
+```bash
+SUMMARY_DB_URL= $C up -d api              # cache disabled, packets generate fresh
+OLLAMA_MODEL=llama3.2:3b $C up -d api     # previous model, if it is still pulled
+```
+
+Switching the model back does **not** invalidate cached prose -- the hash covers the
+patient's facts, not the model -- so clear it if you want the old model's summaries back:
+
+```bash
+$C exec db psql -U hapi -d summaries -c "TRUNCATE summary_cache;"
+```
+
+`scripts/` is not copied into the API image (the Dockerfile ships `app/` and `ui/` only), so
+`scripts.cache_admin` is a laptop tool -- point it at the instance or use the `psql` above.
 
 ---
 

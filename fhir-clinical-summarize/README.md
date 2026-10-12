@@ -212,7 +212,7 @@ undeduplicated payload would have produced a confident summary of partial data.
 `num_ctx` is set explicitly to 8192.
 
 **Active and past are split in Python, not left to the model.** Given a flat list with
-`status` fields, llama3.2:3b returned a comma-separated dump — `"Stroke (active),
+`status` fields, an early run returned a comma-separated dump — `"Stroke (active),
 Osteoporosis (active), ..."`. Given pre-grouped lists and an explicit "do not output a
 list", it writes prose. Grouping is trivial in Python and unreliable in a small model.
 
@@ -262,35 +262,33 @@ Reasons a small local model fits the job:
   what deduplicates, what is missing — are made in Python. The model is being asked to turn
   four short lists into two sentences.
 - **~460 prompt tokens** means a small model is the right one; nothing here benefits from a
-  larger context or deeper reasoning. Both candidates advertise a 131,072-token context
-  against Ollama's 4096 default, so `num_ctx` is set explicitly either way.
+  larger context or deeper reasoning. It advertises a 131,072-token context against
+  Ollama's 4096 default, so `num_ctx` is set explicitly rather than inherited.
 - It runs alongside HAPI and Postgres on an 8 GB laptop, with no paid API.
 
-Switched from **`llama3.2:3b`** (Meta, 2 GB, Q4_K_M), which `OLLAMA_MODEL` still selects.
 What is measured so far, same facts through `write_summary`, Apple M2 / 8 GB:
 
-| | `llama3.2:3b` | `gemma3:4b` |
-|---|---|---|
-| Warm call | 6.5 s | 3.8 s |
-| Cold call (model load) | ~19 s | 27.7 s |
-| Resident at `num_ctx=8192` | 3.0 GB | 3.6 GB |
-| Placement | 100% GPU | 22% / 78% CPU/GPU |
+| | measured |
+|---|---|
+| Warm call | 3.8 s |
+| Cold call (model load) | 27.7 s |
+| Resident at `num_ctx=8192` | 3.6 GB |
+| Placement | 22% / 78% CPU/GPU |
 
-Two things the switch costs, both measured rather than assumed:
+Two costs worth naming, both measured rather than assumed:
 
-- At `num_ctx=8192` gemma3:4b no longer fits entirely in Metal alongside HAPI and Postgres,
-  so 22% of it runs on CPU. It is still fast warm, but it is no longer GPU-resident.
-- It is the one model of the two that **failed a mechanical check** on the 10-patient
-  review: a single-sentence answer where the prompt requires two. See
-  [Hand review of 10 patients](#hand-review-of-10-patients) — `llama3.2:3b` scored 10/10,
-  gemma3:4b 9/10, and sources resolved 126/126 under both.
+- At `num_ctx=8192` it no longer fits entirely in Metal alongside HAPI and Postgres, so 22%
+  of it runs on CPU. It is still fast warm, but it is no longer GPU-resident.
+- It **failed one mechanical check** on the 10-patient review: a single-sentence answer where
+  the prompt requires two. See [Hand review of 10 patients](#hand-review-of-10-patients) —
+  9/10 mechanical, with sources resolving 126/126.
 
 One claim worth retracting, since it drove the decision to look harder: on a *synthetic*
-one-medication payload gemma3:4b turned `"Lisinopril 10 mg"` into "prescribed Lisinopril
+one-medication payload the model turned `"Lisinopril 10 mg"` into "prescribed Lisinopril
 10 mg **daily**", a frequency nothing upstream emits. It reproduces on that payload, but it
 **did not recur anywhere in the 10-patient run** — zero invented frequencies and zero
-ungrounded doses for both models on real records. `eval_sample.py` checks for it on every
-run, so a regression would be caught rather than assumed absent.
+ungrounded doses on real records. `eval_sample.py` checks for it on every run, so a
+regression would be caught rather than assumed absent.
 
 ---
 
@@ -347,6 +345,55 @@ than through a bypass the route would otherwise never use.
 
 ---
 
+## Demo patients
+
+Ten loaded patients chosen to cover every branch in the deterministic layer — ages 7 to 115,
+empty to dense charts, allergy-heavy, zero-meds, everything-resolved, and the deduplication
+extreme. `id` is what `GET /patients/{id}/packet` takes; MRN is the Synthea `MR` identifier
+inside the bundle. Counts are read from the bundles, not from a summary.
+
+| # | Name | Patient id | MRN | Age / sex | Cond (act/past) | Med orders → distinct | Allergies |
+|---|---|---|---|---|---|---|---|
+| 1 | Ardelia Larson | `664632b2-1503-42f3-921d-2fa78912f35c` | `68b95ae3-8732-4948-9345-f3d490bc4ae5` | 7 F | 0 / 0 | 0 → 0 | 0 |
+| 2 | Joaquin Ortiz | `cbe3e2d8-dc40-40f1-ac21-c7ab36f4bdb8` | `ddd7655c-895e-4024-8938-77324122f34b` | 19 M | 0 / 10 | 10 → 6 (0 active) | 0 |
+| 3 | Kerri Reilly | `f643310d-5ca3-4d9b-8fc6-0cad519f761d` | `4c00db79-84b6-4915-aaf7-b4fbdc164858` | 24 F | 2 / 3 | 7 → 7 | **10** |
+| 4 | Adolph Williamson | `3f8be6b0-15a6-43f4-87f3-1adb737fa598` | `2de9315e-3784-4802-944a-926bcd8febd4` | 33 M | 0 / 3 | 1 → 1 (0 active) | 0 |
+| 5 | María Soledad Sanches | `7f89f693-7205-4bd6-bba1-a2645876ecee` | `a8148b4d-2f27-4192-9d82-0d089f830c4a` | 45 F, deceased | 4 / 4 | 15 → 15 | 0 |
+| 6 | Ernestina Donnelly | `78378d37-92b5-4d2e-8f6c-b8f5e79f3999` | `a1e2a560-efee-4735-8d42-d7132e55d1fe` | 50 F | 6 / 4 | 12 → 9 | 7 |
+| 7 | Otis Johns | `1691a21e-867b-44f2-8e22-00013398cb7b` | `18f154cc-ec1c-427c-9ecc-48bae325c4d6` | 70 M | 3 / 1 | 0 → 0 | 0 |
+| 8 | Coleman Huel | `8143897c-e650-4e55-b08d-8306e2f424bb` | `ad7f38c5-8a53-4a6c-9b6d-7ad0637164d7` | 95 M | **18** / 6 | 14 → 13 (11 active) | 0 |
+| 9 | Antonio Mayer | `5e4b559d-6999-4c91-9256-7c9845d6e167` | `89b6a6af-8f08-4341-9dad-e42eb45308cd` | 102 M, deceased | 10 / 4 | **164 → 11** | 0 |
+| 10 | Rory Bauch | `a4b0697c-4c06-41f0-ada5-d17517850127` | `3c2086bb-32e7-4d82-ba8d-fd981a57123f` | 115 M, deceased | 11 / 0 | 6 → 6 | 0 |
+
+What each one is for:
+
+1. **Ardelia Larson (7)** — a completely empty chart. The only patient that fires every
+   `missing` note at once, and proof the service returns facts with a blank summary rather
+   than an error.
+2. **Joaquin Ortiz (19)** — 10 conditions, all resolved; 10 medication orders, none active.
+   The active/past split has to be right or the packet reads as a sick teenager.
+3. **Kerri Reilly (24)** — 10 allergies, the cohort maximum. The risk lives in the allergy
+   list, not the problem list.
+4. **Adolph Williamson (33)** — one of the three edge cases pinned in `eval_sample.py`:
+   nothing active at all.
+5. **María Soledad Sanches (45)** — non-ASCII name, deceased, 15 distinct drugs with no
+   repetition to collapse. Encoding-safe end to end.
+6. **Ernestina Donnelly (50)** — the ordinary packet: 6 active problems, 7 allergies, 12
+   orders deduping to 9. The one to click through to `source` on.
+7. **Otis Johns (70)** — active problems, zero medications: the literal
+   `"No medications on file"` case.
+8. **Coleman Huel (95)** — 18 active conditions, 11 active drugs, a 6.7 MB bundle. Worst-case
+   prompt that still has to fit `num_ctx`.
+9. **Antonio Mayer (102)** — 164 medication orders collapsing to 11 distinct drugs. The
+   deduplication argument in one request.
+10. **Rory Bauch (115)** — oldest in the cohort, deceased, 11 active conditions and nothing
+    resolved. The date/age counterpart to Ardelia.
+
+Nine are in `data/patient_ids.txt`; `3f8be6b0-…` is one of the three pinned edge patients
+that are on the server but outside that file (the 301-vs-299 gap).
+
+---
+
 ## Results and observations
 
 ### Measured on this machine (Apple M2, 8 GB, Colima 4 CPU / 8 GB)
@@ -357,7 +404,7 @@ than through a bypass the route would otherwise never use.
 | Loaded | **301 patients** → 2,185 conditions, 2,356 medication requests, 53,785 observations |
 | Postgres size | **832 MB** for 301 patients (~2.8 MB/patient → ~3.3 GB for all 1,180) |
 | Load throughput | ~2.1 s per bundle → the full 1,180 would take roughly 40 minutes |
-| Packet latency | **3–8 s** warm, ~19 s on the first call while the model loads (under `llama3.2:3b`; not yet re-measured for `gemma3:4b`) |
+| Packet latency | **3–8 s** warm, ~28 s on the first call while `gemma3:4b` loads |
 | Tests | 20, all deterministic (no FHIR server, no model) |
 
 A representative sample was loaded rather than all 1,180: the hand review covers 10
@@ -392,8 +439,8 @@ string comparison can settle, and stages the rest on a worksheet with a blank ve
 per patient. There is deliberately **no LLM judge**: grading the prose with a second model
 would undercut the one claim this project makes.
 
-The sample is three pinned edge cases plus a seeded fill, so two runs differ only by the
-model under test. All three edge patients are on the server but absent from
+The sample is three pinned edge cases plus a seeded fill, so the cohort is identical from
+run to run. All three edge patients are on the server but absent from
 `data/patient_ids.txt`, which is the 301-vs-299 gap — they are pinned by full id:
 
 | patient | edge it covers | verified |
@@ -407,35 +454,31 @@ confirm it still carries the `display` the packet cites it for; doses in the pro
 appear in the payload; dosing *frequencies* must not appear at all, since nothing upstream
 emits one; no approve/deny/authorize language; two sentences, no bullets.
 
-**Results, same 10 patients, `temperature: 0`:**
+**Results, 10 patients, `gemma3:4b` at `temperature: 0`:**
 
-| | `llama3.2:3b` | `gemma3:4b` |
-|---|---|---|
-| Sources resolved | **126/126** | **126/126** |
-| Passed every mechanical check | **10/10** | **9/10** |
-| Invented doses / frequencies | 0 | 0 |
-| Decision language | 0 | 0 |
-| Active conditions framed as history *(flagged for review)* | 5/10 patients | 7/10 patients |
+| | result |
+|---|---|
+| Sources resolved | **126/126** |
+| Passed every mechanical check | **9/10** |
+| Invented doses / frequencies | 0 |
+| Decision language | 0 |
+| Active conditions framed as history *(flagged for review)* | 7/10 patients |
 
-The single mechanical failure is `gemma3:4b` on `a166eeaa-…`, which answered in **one**
-sentence where the prompt requires two, and framed the one active condition as history:
+The single mechanical failure is `a166eeaa-…`, which answered in **one** sentence where the
+prompt requires two, and framed the one active condition as history:
 
 > *"The patient presents with a history of chronic sinusitis dating back to March 8, 2001,
 > alongside a past medical history including viral sinusitis…"*
 
-`llama3.2:3b` on the same payload: *"has a **current diagnosis** of chronic sinusitis, which
-has been ongoing since 2001…"* — two sentences, correct tense.
-
-**The active-as-history framing is a prompt problem, not a model problem.** Both models do it
-at comparable rates, so swapping models does not fix it; the last line of the system prompt
-guards the past→present direction and nothing guards present→past. It is reported but never
-failed on, because it is sometimes *right*: this cohort contains an `active` miscarriage with
+**The active-as-history framing is a prompt problem, not a model problem.** The last line of
+the system prompt guards the past→present direction and nothing guards present→past. It is
+reported but never failed on, because it is sometimes *right*: this cohort contains an `active` miscarriage with
 a 1990 onset, where "history of" is the honest reading and the FHIR status is what is wrong.
 That is exactly the call a string check cannot make, which is why the worksheet leaves it to
 a person.
 
-> **Still open:** the `Verdict` lines on both worksheets are blank. The counts above are the
-> mechanical half; a clinician reading the 20 summaries is the half that decides.
+> **Still open:** the `Verdict` lines on the worksheet are blank. The counts above are the
+> mechanical half; a clinician reading the 10 summaries is the half that decides.
 
 ---
 
