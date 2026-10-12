@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # -- model ------------------------------------------------------------
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2:3b"
+    ollama_model: str = "gemma3:4b"
 
     # -- behaviour --------------------------------------------------------
     request_timeout_s: float = 60.0

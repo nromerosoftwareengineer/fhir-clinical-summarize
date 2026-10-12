@@ -173,7 +173,7 @@ curl -s localhost/health
 
 ```bash
 C="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
-$C exec ollama ollama pull llama3.2:3b
+$C exec ollama ollama pull gemma3:4b
 $C exec ollama ollama list
 ```
 
@@ -224,6 +224,244 @@ sudo sed -i 's/DOMAIN/YOUR_DOMAIN/g' deploy/nginx-tls.conf
 
 NGINX_CONF=./deploy/nginx-tls.conf PUBLIC_URL=https://YOUR_DOMAIN \
   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d nginx api
+```
+
+---
+
+## Troubleshooting
+
+Every problem below was hit while actually doing this.
+
+### Shorthand
+
+The compose prefix appears in every command. Set it once per session, or append
+it to `~/.bashrc`:
+
+```bash
+C="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+$C ps
+$C logs -f api
+```
+
+Watch for commands split across lines with a trailing `\` -- copying only the
+second line gives errors like `bash: exec: api: not found`.
+
+### The deployment files are missing after cloning
+
+```bash
+$ ls
+README.md  app  docker-compose.yml  pyproject.toml  scripts  tests  ui
+# no Dockerfile, no docker-compose.prod.yml, no deploy/
+```
+
+The clone reflects what is **pushed**, not what is on your laptop. Commit and
+push locally, then `git pull` on the instance.
+
+Also check where you are: cloning into a directory of the same name gives
+`~/fhir-clinical-summarize/fhir-clinical-summarize`. Harmless, but every `cd` in
+this guide assumes the repo root.
+
+### Nothing responds from outside, but localhost works on the instance
+
+If `curl -s localhost/health` works on the instance and nothing works from your
+laptop, nginx is fine and the problem is network. In order of likelihood:
+
+**1. Security group.** Check what is actually allowed -- this recovers `$SG`
+even if you lost the variable:
+
+```bash
+export SG=$(aws ec2 describe-instances --region $REGION \
+  --filters "Name=tag:Name,Values=$NAME" "Name=instance-state-name,Values=running" \
+  --query 'Reservations[0].Instances[0].SecurityGroups[0].GroupId' --output text)
+
+aws ec2 describe-security-groups --region $REGION --group-ids $SG \
+  --query 'SecurityGroups[0].IpPermissions[].{proto:IpProtocol,from:FromPort,to:ToPort,cidrs:IpRanges[].CidrIp}' \
+  --output json
+```
+
+You want entries for 22, 80 and 443. If only 22 is there:
+
+```bash
+aws ec2 authorize-security-group-ingress --region $REGION --group-id $SG \
+  --protocol tcp --port 80 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --region $REGION --group-id $SG \
+  --protocol tcp --port 443 --cidr 0.0.0.0/0
+```
+
+`InvalidPermission.Duplicate` means that rule already exists -- harmless. Changes
+apply immediately; nothing needs restarting.
+
+**Read the failure mode**, because it localises the fault:
+
+```bash
+curl -sv --max-time 10 "http://$IP/health" 2>&1 | tail -5
+```
+
+| Result | Meaning |
+|---|---|
+| `{"status":"ok"}` | fixed |
+| `Connection timed out` | packets dropped -- security group or NACL |
+| `Connection refused` | reached the host, nothing listening -- **not** a firewall problem |
+
+A security group drops traffic silently, so it always presents as a timeout.
+"Refused" points at nginx instead.
+
+**2. Host firewall.** On the instance:
+
+```bash
+sudo ufw status          # expect: inactive
+```
+
+Ubuntu EC2 images ship with it off. If something turned it on:
+
+```bash
+sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
+```
+
+**3. Network ACL.** Subnet-level, defaults to allow-all, but worth ruling out:
+
+```bash
+export SUBNET=$(aws ec2 describe-instances --region $REGION --instance-ids $ID \
+  --query 'Reservations[0].Instances[0].SubnetId' --output text)
+aws ec2 describe-network-acls --region $REGION \
+  --filters "Name=association.subnet-id,Values=$SUBNET" \
+  --query 'NetworkAcls[0].Entries' --output table
+```
+
+Look for rule 100 allowing all traffic inbound and outbound.
+
+**4. nginx not bound to the host.** On the instance:
+
+```bash
+sudo ss -tlnp | grep ':80'      # expect 0.0.0.0:80 via docker-proxy
+$C ps                            # is nginx even up?
+```
+
+nginx resolves `api` and `hapi-fhir` at start-up, so if it wins the race against
+them it exits. `restart: unless-stopped` recovers it within seconds; if it is the
+only thing down, `$C restart nginx`.
+
+### Citation links are plain text, or FHIR_PUBLIC_URL is blank
+
+```bash
+$C exec api printenv FHIR_PUBLIC_URL     # blank
+$C config | grep FHIR_PUBLIC_URL         # FHIR_PUBLIC_URL: ""
+```
+
+Compose reads `.env` from the **project directory** -- the folder holding the
+compose file passed to `-f`, which with relative paths is your current directory.
+A `.env` one level up is never seen.
+
+```bash
+cd ~/fhir-clinical-summarize          # the repo root, wherever that is
+echo "PUBLIC_URL=http://$IP" > .env
+cat .env
+
+$C up -d --force-recreate api
+```
+
+`--force-recreate` matters: writing `.env` does not change a running container,
+and without it Compose may decide nothing needs replacing.
+
+Verify through the app rather than the environment, since that is what the
+dashboard reads:
+
+```bash
+curl -s localhost/config
+# {"fhir_base_url":"http://100.62.174.138/fhir","model":"gemma3:4b"}
+```
+
+Set `PUBLIC_URL` to the bare origin -- scheme and host only. Compose appends
+`/fhir` itself (`FHIR_PUBLIC_URL=${PUBLIC_URL:+${PUBLIC_URL}/fhir}`):
+
+| Wrong | Result |
+|---|---|
+| `http://1.2.3.4/fhir` | `/fhir/fhir` -- every citation 404s |
+| `1.2.3.4` | no scheme; the browser reads it as a relative path |
+| `https://1.2.3.4` | no certificate until step 12 |
+| `http://172.31.x.x` | the private address -- unreachable from a browser |
+
+### ifconfig shows 172.31.x.x, not the public IP
+
+AWS never puts the public address on the interface; it is NAT'd in front of the
+instance. `ifconfig` (and `ip addr`, since `net-tools` is not installed on Ubuntu
+24.04) only ever shows the private address -- which is also encoded in the shell
+prompt, e.g. `ip-172-31-45-112`.
+
+From the instance:
+
+```bash
+TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
+  http://169.254.169.254/latest/meta-data/public-ipv4
+```
+
+From your laptop:
+
+```bash
+aws ec2 describe-instances --region $REGION \
+  --filters "Name=tag:Name,Values=$NAME" "Name=instance-state-name,Values=running" \
+  --query 'Reservations[].Instances[].PublicIpAddress' --output text
+```
+
+### Recovering a lost shell
+
+```bash
+export REGION=us-east-1 NAME=fhir-demo
+export ID=$(aws ec2 describe-instances --region $REGION \
+  --filters "Name=tag:Name,Values=$NAME" "Name=instance-state-name,Values=running" \
+  --query 'Reservations[0].Instances[0].InstanceId' --output text)
+export IP=$(aws ec2 describe-instances --region $REGION --instance-ids $ID \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+export ALLOC=$(aws ec2 describe-addresses --region $REGION \
+  --query "Addresses[?InstanceId=='$ID'].AllocationId|[0]" --output text)
+echo "id=$ID ip=$IP alloc=$ALLOC"
+```
+
+Empty output usually means the instance is **stopped**, not gone -- the
+`running` filter hides it. Drop the filter to see everything. A stopped instance
+has no public IP unless an Elastic IP is attached, which is why step 6 exists.
+
+### /ready reports a dependency down
+
+```bash
+curl -s "http://$IP/ready" | jq .
+```
+
+| Report | Fix |
+|---|---|
+| `model: unavailable` or `loaded models do not include ...` | `$C exec ollama ollama pull gemma3:4b` |
+| `fhir: unavailable` | HAPI still booting -- `$C logs hapi-fhir`, wait for "Started Application" |
+| `/patients` returns `total: 0` | data not loaded -- step 10 |
+
+### The first packet is very slow
+
+20-30 s on the first request while the model loads into memory, then 10-20 s on
+this CPU. Both figures were measured under `llama3.2:3b`; `gemma3:4b` is the
+larger model, so expect somewhat longer until they are re-measured on this host.
+
+The load cost is paid *per load*, not once. Ollama unloads an idle model after
+five minutes by default, so a demo that pauses for questions pays it again --
+and the load alone is longer than the inference it precedes. The compose overlay
+sets `OLLAMA_KEEP_ALIVE=-1`, which pins the model for the life of the container.
+Confirm it took effect:
+
+```bash
+$C exec ollama env | grep KEEP_ALIVE     # OLLAMA_KEEP_ALIVE=-1
+$C exec ollama ollama ps                 # UNTIL reads "Forever"
+```
+
+An empty `ollama ps` means nothing is resident yet: the model loads on the first
+packet and stays from then on, so build one packet after `up -d` and every
+request after it is inference only.
+
+A resident gemma3:4b holds **3.6 GB** at `num_ctx=8192`. That is inside the
+~12 GiB the stack needs on a 16 GiB host, but on a smaller instance trade it back
+for the default:
+
+```bash
+OLLAMA_KEEP_ALIVE=5m $C up -d ollama
 ```
 
 ---
@@ -323,7 +561,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml \
 Confirm it is actually on the GPU -- expect 60+ tokens/sec rather than 10-20:
 
 ```bash
-$C exec ollama ollama run llama3.2:3b --verbose "say hello"
+$C exec ollama ollama run gemma3:4b --verbose "say hello"
 ```
 
 Then drop `REQUEST_TIMEOUT_S` back to 60 and `proxy_read_timeout` to 60s.

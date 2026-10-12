@@ -102,7 +102,7 @@ echo "HAPI ready"
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-  exec ollama ollama pull llama3.2:3b
+  exec ollama ollama pull gemma3:4b
 
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   exec ollama ollama list

@@ -28,7 +28,7 @@ flowchart LR
     H[("HAPI FHIR 8.12<br/>+ Postgres<br/>(Docker)")]
     C["fhir_client.py<br/>search + paging"]
     E["extract.py<br/>facts · sources · dedupe"]
-    L["summarize.py<br/>llama3.2:3b via Ollama<br/>JSON schema output"]
+    L["summarize.py<br/>gemma3:4b via Ollama<br/>JSON schema output"]
     P["GET /patients/{id}/packet"]
 
     S -->|"load_synthea.py<br/>PUT transaction"| H
@@ -56,7 +56,7 @@ docker compose up -d
 until curl -sf http://localhost:8080/fhir/metadata >/dev/null; do sleep 5; done
 
 # 2. Local model
-ollama pull llama3.2:3b
+ollama pull gemma3:4b
 
 # 3. Python environment
 python -m venv .venv && ./.venv/bin/pip install -e ".[dev]"
@@ -206,9 +206,9 @@ undeduplicated payload would have produced a confident summary of partial data.
 `num_ctx` is set explicitly to 8192.
 
 **Active and past are split in Python, not left to the model.** Given a flat list with
-`status` fields, llama3.2:3b returns a comma-separated dump — `"Stroke (active),
+`status` fields, llama3.2:3b returned a comma-separated dump — `"Stroke (active),
 Osteoporosis (active), ..."`. Given pre-grouped lists and an explicit "do not output a
-list", it writes prose. Grouping is trivial in Python and unreliable in a 3B model.
+list", it writes prose. Grouping is trivial in Python and unreliable in a small model.
 
 **Active facts carry their onset date** (`"Obesity (since 1997-08-26)"`). One patient has a
 condition still flagged `active` with a **1990** onset — a Synthea artifact, but a model
@@ -244,26 +244,54 @@ layer emits `"No medications on file"` / `"No active conditions on file"`.
 
 ## Model choice
 
-**`llama3.2:3b`** (Meta, 2 GB, Q4_K_M) served by Ollama, using
+**`gemma3:4b`** (Google, 3.9B parameters, 3.4 GB, Q4_K_M) served by Ollama, using
 [structured outputs](https://ollama.com/blog/structured-outputs) — a JSON schema in the
 `format` field — so the reply is always parseable rather than prose to be scraped.
 `temperature: 0` so the same packet summarizes identically twice, which matters for both the
 hand review and for demoing under questioning.
 
-Reasons it fits the job:
+Reasons a small local model fits the job:
 
 - The task after shaping is **writing, not reasoning**. The hard decisions — what is active,
-  what deduplicates, what is missing — are made in Python. A 3B model is being asked to turn
+  what deduplicates, what is missing — are made in Python. The model is being asked to turn
   four short lists into two sentences.
-- **~460 prompt tokens** means the smallest capable model is the right one; nothing here
-  benefits from a larger context or deeper reasoning.
-- 2 GB fits comfortably alongside HAPI and Postgres on an 8 GB laptop, with no GPU and no
-  paid API.
+- **~460 prompt tokens** means a small model is the right one; nothing here benefits from a
+  larger context or deeper reasoning. Both candidates advertise a 131,072-token context
+  against Ollama's 4096 default, so `num_ctx` is set explicitly either way.
+- It runs alongside HAPI and Postgres on an 8 GB laptop, with no paid API.
 
-> **TODO before the panel:** benchmark against `gemma3:4b` and `phi4-mini:3.8b` over the same
-> 10 patients and record latency, JSON validity rate, and hallucination count. `ollama_model`
-> is already a setting, so this costs one environment variable:
-> `OLLAMA_MODEL=gemma3:4b ./.venv/bin/uvicorn app.main:app`
+Switched from **`llama3.2:3b`** (Meta, 2 GB, Q4_K_M), which `OLLAMA_MODEL` still selects.
+What is measured so far, same facts through `write_summary`, Apple M2 / 8 GB:
+
+| | `llama3.2:3b` | `gemma3:4b` |
+|---|---|---|
+| Warm call | 6.5 s | 3.8 s |
+| Cold call (model load) | ~19 s | 27.7 s |
+| Resident at `num_ctx=8192` | 3.0 GB | 3.6 GB |
+| Placement | 100% GPU | 22% / 78% CPU/GPU |
+
+Two caveats that this switch does **not** yet answer:
+
+- At `num_ctx=8192` gemma3:4b no longer fits entirely in Metal alongside HAPI and Postgres,
+  so 22% of it runs on CPU. It is still fast warm, but it is no longer GPU-resident.
+- On one synthetic case gemma3:4b wrote *"presents with a history of stroke, osteoporosis,
+  and hypertension"* for facts that were all in `active_conditions`, where llama3.2:3b wrote
+  *"is currently being treated for"*. That is the present-as-history inverse of the error the
+  system prompt guards against, and it is the same class of problem already recorded in the
+  hand-review notes below. llama3.2:3b is not clean here either — given an active
+  `"Obesity (since 1997-08-26)"` it wrote *"has a history of obesity dating back to"*.
+- **gemma3:4b invented a dosing frequency.** Given `active_medications: ["Lisinopril 10 mg"]`
+  it wrote *"is prescribed Lisinopril 10 mg **daily**"*. Nothing in the payload carries a
+  frequency; `extract.py` never emits one. llama3.2:3b wrote *"is currently taking Lisinopril
+  10 mg"*. Reproducible across runs at `temperature: 0`. This one is a fabrication, not a
+  clarity problem — it breaks the system prompt's "never invent" rule in a field a
+  prior-authorization reviewer would act on, and it is the strongest argument for running
+  the hand review before this default ships anywhere real.
+
+> **TODO:** run both models through `scripts/eval_sample.py` over the same 10 patients and
+> record JSON validity rate, decision-language count, and the active-vs-history framing.
+> `temperature` is already 0, so the model is the only variable:
+> `OLLAMA_MODEL=llama3.2:3b ./.venv/bin/python -m scripts.eval_sample`
 
 ---
 
@@ -277,7 +305,7 @@ Reasons it fits the job:
 | Loaded | **301 patients** → 2,185 conditions, 2,356 medication requests, 53,785 observations |
 | Postgres size | **832 MB** for 301 patients (~2.8 MB/patient → ~3.3 GB for all 1,180) |
 | Load throughput | ~2.1 s per bundle → the full 1,180 would take roughly 40 minutes |
-| Packet latency | **3–8 s** warm, ~19 s on the first call while the model loads |
+| Packet latency | **3–8 s** warm, ~19 s on the first call while the model loads (under `llama3.2:3b`; not yet re-measured for `gemma3:4b`) |
 | Tests | 20, all deterministic (no FHIR server, no model) |
 
 A representative sample was loaded rather than all 1,180: the hand review covers 10

@@ -19,7 +19,7 @@ can tell "restart this" from "stop routing here".
 | `FHIR_PUBLIC_URL` | falls back to `FHIR_BASE_URL` | What the **browser** links citations to. Set it when the two differ, or leave unset and the dashboard renders references as plain text instead of dead links |
 | `FHIR_AUTH_SCOPE` | unset | Set to `https://<ws>-<svc>.fhir.azurehealthcareapis.com/.default` to authenticate with Entra ID. Unset means anonymous, which is what a local HAPI expects |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Or any OpenAI-compatible endpoint, with a small change in `summarize.py` |
-| `OLLAMA_MODEL` | `llama3.2:3b` | |
+| `OLLAMA_MODEL` | `gemma3:4b` | |
 | `REQUEST_TIMEOUT_S` | `60` | Raise it if inference runs on CPU |
 | `LOG_JSON` | `true` in the image | JSON lines, so Log Analytics parses fields |
 | `LOG_LEVEL` | `INFO` | |

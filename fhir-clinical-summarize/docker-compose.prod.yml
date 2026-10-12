@@ -25,7 +25,7 @@ services:
       # Service names resolve over Compose's internal DNS.
       - FHIR_BASE_URL=http://hapi-fhir:8080/fhir
       - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:4b}
       # CPU inference is several times slower than on a laptop with Metal.
       - REQUEST_TIMEOUT_S=${REQUEST_TIMEOUT_S:-180}
       - LOG_JSON=true
@@ -42,8 +42,17 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
+    environment:
+      # Ollama unloads an idle model after 5 minutes by default, so the first
+      # packet after a quiet spell pays the ~20-30s load again -- which on this
+      # CPU is longer than the inference it precedes. -1 keeps the model
+      # resident for the life of the container, trading ~3.6GB of RAM for a
+      # predictable first request. The stack needs ~12GiB of a 16GiB host, so
+      # the room is already budgeted. Set OLLAMA_KEEP_ALIVE=5m to get the
+      # default back on a smaller instance.
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
     volumes:
-      # The model is ~2 GB. On a named volume it survives restarts instead of
+      # The model is ~3.4 GB. On a named volume it survives restarts instead of
       # being re-downloaded on every boot.
       - ollama-models:/root/.ollama
     restart: unless-stopped

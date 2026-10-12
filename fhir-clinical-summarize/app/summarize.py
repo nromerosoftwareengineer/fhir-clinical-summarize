@@ -21,10 +21,11 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # Two sentences, in prose, grounded in the given facts. The "do not output a
-# list" instruction is not decoration: without it llama3.2:3b returns
-# "Stroke (active), Osteoporosis (active), ..." instead of a summary. The
-# per-sentence structure is there because a 3B model follows positional
-# instructions far more reliably than abstract ones.
+# list" instruction is not decoration: without it llama3.2:3b returned
+# "Stroke (active), Osteoporosis (active), ..." instead of a summary, which
+# is what the instruction was added for. The per-sentence structure is there
+# because a small model follows positional instructions far more reliably
+# than abstract ones.
 SYSTEM_PROMPT = """You write a two-sentence clinical summary for a prior-authorization reviewer.
 
 Write exactly two sentences in prose. Do not output a list. Do not use bullet points.
@@ -43,7 +44,7 @@ SUMMARY_SCHEMA = {
     "required": ["summary"],
 }
 
-# llama3.2:3b advertises a 131,072-token context, but Ollama's own default
+# gemma3:4b advertises a 131,072-token context, but Ollama's own default
 # num_ctx is 4096 and it truncates silently rather than erroring. The shaped
 # payload runs ~460 tokens, so 8192 is ample headroom at negligible cost.
 NUM_CTX = 8192

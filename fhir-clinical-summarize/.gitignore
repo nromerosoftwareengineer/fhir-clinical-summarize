@@ -5,7 +5,7 @@ __pycache__/
 .env
 .pytest_cache/
 .ruff_cache/
-
+.idea/
 # Synthea sample data is large; download it locally, never commit it
 data/
 eval_output/

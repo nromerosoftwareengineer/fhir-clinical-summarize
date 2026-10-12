@@ -170,9 +170,9 @@ def to_prompt_facts(conditions: list[Fact], medications: list[Fact]) -> dict:
     Two deliberate choices:
 
     - Active and past are split here rather than left to the model. Given a flat
-      list with status fields, llama3.2:3b returns a comma-separated dump; given
+      list with status fields, llama3.2:3b returned a comma-separated dump; given
       pre-grouped lists, it writes prose. Grouping is cheap in Python and
-      unreliable in a 3B model.
+      unreliable in a small model.
     - Sources are not included. The model has no use for resource ids, and
       anything in the prompt is something it can mangle. Citations are attached
       deterministically after the summary returns, which makes a fabricated
