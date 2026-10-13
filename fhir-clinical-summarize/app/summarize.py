@@ -20,20 +20,36 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Two sentences, in prose, grounded in the given facts. The "do not output a
-# list" instruction is not decoration: without it llama3.2:3b returned
-# "Stroke (active), Osteoporosis (active), ..." instead of a summary, which
-# is what the instruction was added for. The per-sentence structure is there
-# because a small model follows positional instructions far more reliably
-# than abstract ones.
-SYSTEM_PROMPT = """You write a two-sentence clinical summary for a prior-authorization reviewer.
+# Two to four sentences, in prose, grounded in the given facts. Every clause in
+# here is scar tissue from an observed failure:
+#
+# - "Do not output a list": without it llama3.2:3b returned "Stroke (active),
+#   Osteoporosis (active), ..." instead of a summary.
+# - The numbered structure, because a small model follows positional
+#   instructions far more reliably than abstract ones.
+# - "Write nothing after those sentences", because an open-ended final slot
+#   ("any relevant information") gets filled by restating the active conditions
+#   as history once the model has run out of facts. Measured on a patient with
+#   three active conditions and one past: it wrote "The patient's history
+#   includes prediabetes, anemia, and chronic sinusitis" as a fifth sentence.
+# - "Never describe an active condition ... as past or resolved", which is the
+#   direction the prompt used to leave unguarded. The reverse rule below has
+#   been here since the first version; this one closes the pair.
+#
+# A bounded length is also what keeps inference affordable: an unbounded "up to
+# five sentences" measured 19-26 s warm against 3.8 s for two, which on CPU runs
+# past a reviewer's patience and close to request_timeout_s.
+SYSTEM_PROMPT = """You write a short clinical summary for a prior-authorization reviewer.
 
-Write exactly two sentences in prose. Do not output a list. Do not use bullet points.
-Sentence 1: the patient's active conditions.
-Sentence 2: the active medications, and whether any notable history is past.
+Write two to four sentences of prose. Do not output a list. Do not use bullet points.
+Sentence 1: the active conditions, in the present tense.
+Sentence 2: the active medications in the present tense, or that there are none.
+Sentence 3: the past conditions and past medications, if the record has any.
+Write nothing after those sentences.
 
 Use only the facts given. Never invent a condition, medication, or date.
 Treat past_conditions and past_medications as history, never as current.
+Never describe an active condition or active medication as past or resolved.
 Do not recommend, approve, or deny authorization."""
 
 # Ollama validates the response against this schema, so the reply is always

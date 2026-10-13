@@ -27,19 +27,42 @@ class Fact(BaseModel):
     )
 
 
+class Span(BaseModel):
+    """One mention in the summary prose, resolved to the fact it cites.
+
+    Offsets rather than a term, because the same word can appear twice in two
+    sentences and mean two different records: `summary[start:end]` is one
+    mention and nothing else. `text` is that slice, carried so a renderer can
+    assert the offsets still agree with the prose it was handed.
+
+    `source` is copied off a Fact that was already in the packet before the
+    model ran, which is what makes a fabricated citation structurally
+    impossible rather than merely unlikely.
+    """
+
+    start: int = Field(description="index of the first character of the mention")
+    end: int = Field(description="index one past its last character")
+    text: str = Field(description="the mention as it appears, i.e. summary[start:end]")
+    source: str = Field(description='FHIR reference the mention cites, e.g. "Condition/1a2b"')
+
+
 class Packet(BaseModel):
     """The deliverable: facts a reviewer can check, plus prose they can scan.
 
     None of these fields carry a default, so exclude_defaults never drops one.
     An empty `medications` list and an empty `summary` are both meaningful --
     "no medications on file" and "the model had nothing to say" are findings,
-    not absences.
+    not absences. An empty `citations` list is the same kind of finding: the
+    prose named nothing the record spells the same way.
     """
 
     patient_id: str
     conditions: list[Fact]
     medications: list[Fact]
     summary: str
+    citations: list[Span] = Field(
+        description="mentions in `summary` resolved to the facts they cite, in reading order"
+    )
     missing: list[str]
 
 

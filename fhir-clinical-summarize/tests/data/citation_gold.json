@@ -1,0 +1,1064 @@
+{
+  "_about": "Hand-labelled alignment gold set for app/link.py, scored by `python -m scripts.eval_citations`. Each case is self-contained: the prose the model wrote and the prompt_facts it was written from are frozen here, so re-running scripts/eval_sample.py (which overwrites eval_output/ and changes the prose) cannot invalidate the labelling. Targets are the undecorated fact display, i.e. the prompt_facts label with ' (since YYYY-MM-DD)' and ' xN' stripped. 'links' = a phrase (with its 1-based occurrence) that MUST cite that fact. 'forbid' = a phrase that must NOT be linked: it names no single fact. 'ignore' = defensible either way, excluded from scoring and counted separately. Each case's 'note' records the judgment calls.",
+  "cases": [
+    {
+      "case": "g0",
+      "patient_id": "3f8be6b0-15a6-43f4-87f3-1adb737fa598",
+      "model": "gemma3:4b",
+      "src": "gemma3:4b run of 2026-10-11",
+      "note": "one combo-drug fact named by three of its components -- three phrases, one source",
+      "summary": "The patient has a history of viral sinusitis and acute bronchitis. Their past medications include acetaminophen, dextromethorphan, and doxylamine succinate.",
+      "prompt_facts": {
+        "active_conditions": [],
+        "active_medications": [],
+        "past_conditions": [
+          "Viral sinusitis (disorder)",
+          "Viral sinusitis (disorder)",
+          "Acute bronchitis (disorder)"
+        ],
+        "past_medications": [
+          "Acetaminophen 21.7 MG/ML / Dextromethorphan Hydrobromide 1 MG/ML / doxylamine succinate 0.417 MG/ML Oral Solution"
+        ]
+      },
+      "links": [
+        [
+          "viral sinusitis",
+          1,
+          "Viral sinusitis (disorder)"
+        ],
+        [
+          "acute bronchitis",
+          1,
+          "Acute bronchitis (disorder)"
+        ],
+        [
+          "acetaminophen",
+          1,
+          "Acetaminophen 21.7 MG/ML / Dextromethorphan Hydrobromide 1 MG/ML / doxylamine succinate 0.417 MG/ML Oral Solution"
+        ],
+        [
+          "dextromethorphan",
+          1,
+          "Acetaminophen 21.7 MG/ML / Dextromethorphan Hydrobromide 1 MG/ML / doxylamine succinate 0.417 MG/ML Oral Solution"
+        ],
+        [
+          "doxylamine succinate",
+          1,
+          "Acetaminophen 21.7 MG/ML / Dextromethorphan Hydrobromide 1 MG/ML / doxylamine succinate 0.417 MG/ML Oral Solution"
+        ]
+      ],
+      "forbid": [],
+      "ignore": []
+    },
+    {
+      "case": "g1",
+      "patient_id": "632b7c1c-9545-4aa7-9fd5-07683139ef13",
+      "model": "gemma3:4b",
+      "src": "gemma3:4b run of 2026-10-11",
+      "note": "'sinusitis' alone vs 'chronic sinusitis' -- the substring trap. Gold phrase for the bare one is deliberately wide because the matcher only has to overlap it.",
+      "summary": "The patient\u2019s active findings include a body mass index of 30+ due to obesity, which has been present since August 26, 1997, and a history of miscarriage in the first trimester dating back to May 29, 1990.  The patient\u2019s past medical history includes chronic sinusitis, sinusitis, and acute viral pharyngitis.",
+      "prompt_facts": {
+        "active_conditions": [
+          "Body mass index 30+ - obesity (finding) (since 1997-08-26)",
+          "Miscarriage in first trimester (since 1990-05-29)"
+        ],
+        "active_medications": [],
+        "past_conditions": [
+          "Chronic sinusitis (disorder)",
+          "Sinusitis (disorder)",
+          "Acute viral pharyngitis (disorder)"
+        ],
+        "past_medications": []
+      },
+      "links": [
+        [
+          "body mass index of 30+ due to obesity",
+          1,
+          "Body mass index 30+ - obesity (finding)"
+        ],
+        [
+          "miscarriage in the first trimester",
+          1,
+          "Miscarriage in first trimester"
+        ],
+        [
+          "chronic sinusitis",
+          1,
+          "Chronic sinusitis (disorder)"
+        ],
+        [
+          "sinusitis, and acute viral pharyngitis",
+          1,
+          "Sinusitis (disorder)"
+        ],
+        [
+          "acute viral pharyngitis",
+          1,
+          "Acute viral pharyngitis (disorder)"
+        ]
+      ],
+      "forbid": [],
+      "ignore": []
+    },
+    {
+      "case": "g2",
+      "patient_id": "5e4b559d-6999-4c91-9256-7c9845d6e167",
+      "model": "gemma3:4b",
+      "src": "gemma3:4b run of 2026-10-11",
+      "note": "'prostate neoplasm' is word-reversed from 'Neoplasm of prostate'; DOCEtaxel/PACLitaxel are case-mangled in the record; Simvistatin 10 MG exists as both an active and a past fact",
+      "summary": "The patient\u2019s active conditions include stroke, non-small cell carcinoma of lung, and prostate neoplasm, alongside a history of osteoporosis and hyperlipidemia. The patient is currently taking Simvistatin, Docetaxel, Leuprolide Acetate, Sertraline, and Acetaminophen/Hydrocodone, with prior use of Cisplatin, Paclitaxel, and Clopidogrel.",
+      "prompt_facts": {
+        "active_conditions": [
+          "Stroke (since 2002-06-17)",
+          "Non-small cell carcinoma of lung, TNM stage 1 (disorder) (since 2000-12-03)",
+          "Non-small cell lung cancer (disorder) (since 2000-12-02)",
+          "Suspected lung cancer (situation) (since 2000-11-24)",
+          "Neoplasm of prostate (since 1994-10-24)",
+          "Carcinoma in situ of prostate (disorder) (since 1994-10-24)",
+          "Osteoporosis (disorder) (since 1984-08-27)",
+          "Hyperlipidemia (since 1970-07-20)",
+          "Body mass index 30+ - obesity (finding) (since 1966-07-11)",
+          "Chronic sinusitis (disorder) (since 1951-02-28)"
+        ],
+        "active_medications": [
+          "Simvistatin 10 MG (since 2005-08-01)",
+          "1 ML DOCEtaxel 20 MG/ML Injection (since 1994-10-24)",
+          "0.25 ML Leuprolide Acetate 30 MG/ML Prefilled Syringe (since 1994-10-24)",
+          "Sertraline 100MG (since 1951-07-08)",
+          "Acetaminophen/Hydrocodone (since 1951-07-08)"
+        ],
+        "past_conditions": [
+          "Fracture of forearm",
+          "Pathological fracture due to osteoporosis (disorder)",
+          "Acute viral pharyngitis (disorder)",
+          "Streptococcal sore throat (disorder)"
+        ],
+        "past_medications": [
+          "Cisplatin 50 MG Injection",
+          "PACLitaxel 100 MG Injection",
+          "Meperidine Hydrochloride 50 MG Oral Tablet",
+          "Ibuprofen 200 MG Oral Tablet",
+          "Simvistatin 10 MG",
+          "Clopidogrel 75 MG Oral Tablet",
+          "Alteplase 100 MG Injection"
+        ]
+      },
+      "links": [
+        [
+          "stroke",
+          1,
+          "Stroke"
+        ],
+        [
+          "non-small cell carcinoma of lung",
+          1,
+          "Non-small cell carcinoma of lung, TNM stage 1 (disorder)"
+        ],
+        [
+          "prostate neoplasm",
+          1,
+          "Neoplasm of prostate"
+        ],
+        [
+          "osteoporosis",
+          1,
+          "Osteoporosis (disorder)"
+        ],
+        [
+          "hyperlipidemia",
+          1,
+          "Hyperlipidemia"
+        ],
+        [
+          "Simvistatin",
+          1,
+          "Simvistatin 10 MG"
+        ],
+        [
+          "Docetaxel",
+          1,
+          "1 ML DOCEtaxel 20 MG/ML Injection"
+        ],
+        [
+          "Leuprolide Acetate",
+          1,
+          "0.25 ML Leuprolide Acetate 30 MG/ML Prefilled Syringe"
+        ],
+        [
+          "Sertraline",
+          1,
+          "Sertraline 100MG"
+        ],
+        [
+          "Acetaminophen/Hydrocodone",
+          1,
+          "Acetaminophen/Hydrocodone"
+        ],
+        [
+          "Cisplatin",
+          1,
+          "Cisplatin 50 MG Injection"
+        ],
+        [
+          "Paclitaxel",
+          1,
+          "PACLitaxel 100 MG Injection"
+        ],
+        [
+          "Clopidogrel",
+          1,
+          "Clopidogrel 75 MG Oral Tablet"
+        ]
+      ],
+      "forbid": [],
+      "ignore": []
+    },
+    {
+      "case": "l0",
+      "patient_id": "3f8be6b0-15a6-43f4-87f3-1adb737fa598",
+      "model": "llama3.2:3b",
+      "src": "llama3.2:3b run of 2026-10-11",
+      "note": "same two conditions mentioned twice; only the first mention is required",
+      "summary": "The patient has a history of viral sinusitis and acute bronchitis, but currently has no active conditions. The patient has previously taken acetaminophen for symptom relief, indicating a past episode of viral sinusitis and acute bronchitis.",
+      "prompt_facts": {
+        "active_conditions": [],
+        "active_medications": [],
+        "past_conditions": [
+          "Viral sinusitis (disorder)",
+          "Viral sinusitis (disorder)",
+          "Acute bronchitis (disorder)"
+        ],
+        "past_medications": [
+          "Acetaminophen 21.7 MG/ML / Dextromethorphan Hydrobromide 1 MG/ML / doxylamine succinate 0.417 MG/ML Oral Solution"
+        ]
+      },
+      "links": [
+        [
+          "viral sinusitis",
+          1,
+          "Viral sinusitis (disorder)"
+        ],
+        [
+          "acute bronchitis",
+          1,
+          "Acute bronchitis (disorder)"
+        ],
+        [
+          "acetaminophen",
+          1,
+          "Acetaminophen 21.7 MG/ML / Dextromethorphan Hydrobromide 1 MG/ML / doxylamine succinate 0.417 MG/ML Oral Solution"
+        ]
+      ],
+      "forbid": [],
+      "ignore": [
+        [
+          "viral sinusitis",
+          2
+        ],
+        [
+          "acute bronchitis",
+          2
+        ]
+      ]
+    },
+    {
+      "case": "l1",
+      "patient_id": "632b7c1c-9545-4aa7-9fd5-07683139ef13",
+      "model": "llama3.2:3b",
+      "src": "llama3.2:3b run of 2026-10-11",
+      "note": "'obesity' alone has to reach 'Body mass index 30+ - obesity (finding)'",
+      "summary": "The patient has a history of chronic sinusitis, sinusitis, and acute viral pharyngitis, as well as an active finding of obesity since 1997, and a past miscarriage in the first trimester since 1990. The patient is currently not taking any active medications.",
+      "prompt_facts": {
+        "active_conditions": [
+          "Body mass index 30+ - obesity (finding) (since 1997-08-26)",
+          "Miscarriage in first trimester (since 1990-05-29)"
+        ],
+        "active_medications": [],
+        "past_conditions": [
+          "Chronic sinusitis (disorder)",
+          "Sinusitis (disorder)",
+          "Acute viral pharyngitis (disorder)"
+        ],
+        "past_medications": []
+      },
+      "links": [
+        [
+          "chronic sinusitis",
+          1,
+          "Chronic sinusitis (disorder)"
+        ],
+        [
+          "sinusitis, and acute viral pharyngitis",
+          1,
+          "Sinusitis (disorder)"
+        ],
+        [
+          "acute viral pharyngitis",
+          1,
+          "Acute viral pharyngitis (disorder)"
+        ],
+        [
+          "obesity",
+          1,
+          "Body mass index 30+ - obesity (finding)"
+        ],
+        [
+          "miscarriage in the first trimester",
+          1,
+          "Miscarriage in first trimester"
+        ]
+      ],
+      "forbid": [],
+      "ignore": []
+    },
+    {
+      "case": "l2",
+      "patient_id": "5e4b559d-6999-4c91-9256-7c9845d6e167",
+      "model": "llama3.2:3b",
+      "src": "llama3.2:3b run of 2026-10-11",
+      "note": "'fractures' is ignored: two fracture facts on file, so no single correct target",
+      "summary": "The patient has a history of stroke, non-small cell carcinoma of lung, prostate neoplasm, osteoporosis, hyperlipidemia, obesity, and chronic sinusitis, with current active conditions including stroke, non-small cell lung cancer, and prostate neoplasm. The patient is currently taking Simvistatin, Docetaxel, Leuprolide Acetate, Sertraline, and Acetaminophen/Hydrocodone, with notable past conditions including fractures, viral pharyngitis, and streptococcal sore throat.",
+      "prompt_facts": {
+        "active_conditions": [
+          "Stroke (since 2002-06-17)",
+          "Non-small cell carcinoma of lung, TNM stage 1 (disorder) (since 2000-12-03)",
+          "Non-small cell lung cancer (disorder) (since 2000-12-02)",
+          "Suspected lung cancer (situation) (since 2000-11-24)",
+          "Neoplasm of prostate (since 1994-10-24)",
+          "Carcinoma in situ of prostate (disorder) (since 1994-10-24)",
+          "Osteoporosis (disorder) (since 1984-08-27)",
+          "Hyperlipidemia (since 1970-07-20)",
+          "Body mass index 30+ - obesity (finding) (since 1966-07-11)",
+          "Chronic sinusitis (disorder) (since 1951-02-28)"
+        ],
+        "active_medications": [
+          "Simvistatin 10 MG (since 2005-08-01)",
+          "1 ML DOCEtaxel 20 MG/ML Injection (since 1994-10-24)",
+          "0.25 ML Leuprolide Acetate 30 MG/ML Prefilled Syringe (since 1994-10-24)",
+          "Sertraline 100MG (since 1951-07-08)",
+          "Acetaminophen/Hydrocodone (since 1951-07-08)"
+        ],
+        "past_conditions": [
+          "Fracture of forearm",
+          "Pathological fracture due to osteoporosis (disorder)",
+          "Acute viral pharyngitis (disorder)",
+          "Streptococcal sore throat (disorder)"
+        ],
+        "past_medications": [
+          "Cisplatin 50 MG Injection",
+          "PACLitaxel 100 MG Injection",
+          "Meperidine Hydrochloride 50 MG Oral Tablet",
+          "Ibuprofen 200 MG Oral Tablet",
+          "Simvistatin 10 MG",
+          "Clopidogrel 75 MG Oral Tablet",
+          "Alteplase 100 MG Injection"
+        ]
+      },
+      "links": [
+        [
+          "stroke",
+          1,
+          "Stroke"
+        ],
+        [
+          "non-small cell carcinoma of lung",
+          1,
+          "Non-small cell carcinoma of lung, TNM stage 1 (disorder)"
+        ],
+        [
+          "prostate neoplasm",
+          1,
+          "Neoplasm of prostate"
+        ],
+        [
+          "osteoporosis",
+          1,
+          "Osteoporosis (disorder)"
+        ],
+        [
+          "hyperlipidemia",
+          1,
+          "Hyperlipidemia"
+        ],
+        [
+          "obesity",
+          1,
+          "Body mass index 30+ - obesity (finding)"
+        ],
+        [
+          "chronic sinusitis",
+          1,
+          "Chronic sinusitis (disorder)"
+        ],
+        [
+          "non-small cell lung cancer",
+          1,
+          "Non-small cell lung cancer (disorder)"
+        ],
+        [
+          "Simvistatin",
+          1,
+          "Simvistatin 10 MG"
+        ],
+        [
+          "Docetaxel",
+          1,
+          "1 ML DOCEtaxel 20 MG/ML Injection"
+        ],
+        [
+          "Leuprolide Acetate",
+          1,
+          "0.25 ML Leuprolide Acetate 30 MG/ML Prefilled Syringe"
+        ],
+        [
+          "Sertraline",
+          1,
+          "Sertraline 100MG"
+        ],
+        [
+          "Acetaminophen/Hydrocodone",
+          1,
+          "Acetaminophen/Hydrocodone"
+        ],
+        [
+          "viral pharyngitis",
+          1,
+          "Acute viral pharyngitis (disorder)"
+        ],
+        [
+          "streptococcal sore throat",
+          1,
+          "Streptococcal sore throat (disorder)"
+        ]
+      ],
+      "forbid": [],
+      "ignore": [
+        [
+          "stroke",
+          2
+        ],
+        [
+          "prostate neoplasm",
+          2
+        ],
+        [
+          "fractures",
+          1
+        ]
+      ]
+    },
+    {
+      "case": "l3",
+      "patient_id": "a166eeaa-a428-466e-b0f5-c523ed4c950a",
+      "model": "llama3.2:3b",
+      "src": "llama3.2:3b run of 2026-10-11",
+      "note": "the drug-class words name no fact and must stay unlinked",
+      "summary": "The patient has a current diagnosis of chronic sinusitis, which has been ongoing since 2001, and has a history of viral sinusitis, acute viral pharyngitis, concussion with loss of consciousness, and fracture of clavicle. The patient has previously taken various medications, including antibiotics, hormonal contraceptives, and pain relievers, such as Amoxicillin, Seasonique, Trinessa, Errin, Meperidine, Ibuprofen, and Jolivette.",
+      "prompt_facts": {
+        "active_conditions": [
+          "Chronic sinusitis (disorder) (since 2001-03-08)"
+        ],
+        "active_medications": [],
+        "past_conditions": [
+          "Viral sinusitis (disorder)",
+          "Acute viral pharyngitis (disorder)",
+          "Concussion with loss of consciousness",
+          "Fracture of clavicle"
+        ],
+        "past_medications": [
+          "Amoxicillin 250 MG / Clavulanate 125 MG Oral Tablet",
+          "Seasonique 91 Day Pack",
+          "Trinessa 28 Day Pack",
+          "Errin 28 Day Pack",
+          "Meperidine Hydrochloride 50 MG Oral Tablet",
+          "Ibuprofen 200 MG Oral Tablet",
+          "Jolivette 28 Day Pack"
+        ]
+      },
+      "links": [
+        [
+          "chronic sinusitis",
+          1,
+          "Chronic sinusitis (disorder)"
+        ],
+        [
+          "viral sinusitis",
+          1,
+          "Viral sinusitis (disorder)"
+        ],
+        [
+          "acute viral pharyngitis",
+          1,
+          "Acute viral pharyngitis (disorder)"
+        ],
+        [
+          "concussion with loss of consciousness",
+          1,
+          "Concussion with loss of consciousness"
+        ],
+        [
+          "fracture of clavicle",
+          1,
+          "Fracture of clavicle"
+        ],
+        [
+          "Amoxicillin",
+          1,
+          "Amoxicillin 250 MG / Clavulanate 125 MG Oral Tablet"
+        ],
+        [
+          "Seasonique",
+          1,
+          "Seasonique 91 Day Pack"
+        ],
+        [
+          "Trinessa",
+          1,
+          "Trinessa 28 Day Pack"
+        ],
+        [
+          "Errin",
+          1,
+          "Errin 28 Day Pack"
+        ],
+        [
+          "Meperidine",
+          1,
+          "Meperidine Hydrochloride 50 MG Oral Tablet"
+        ],
+        [
+          "Ibuprofen",
+          1,
+          "Ibuprofen 200 MG Oral Tablet"
+        ],
+        [
+          "Jolivette",
+          1,
+          "Jolivette 28 Day Pack"
+        ]
+      ],
+      "forbid": [
+        "various medications",
+        "antibiotics",
+        "hormonal contraceptives",
+        "pain relievers"
+      ],
+      "ignore": []
+    },
+    {
+      "case": "l4",
+      "patient_id": "b1003fc9-6823-49c7-a4bc-5c09e5135afb",
+      "model": "llama3.2:3b",
+      "src": "llama3.2:3b run of 2026-10-11",
+      "note": "two acetaminophen facts: bare 'Acetaminophen' is the plain tablet, 'Acetaminophen / oxyCODONE' the combo. Gold phrase for the first is widened to disambiguate the occurrence.",
+      "summary": "The patient has a complex medical history, with active conditions including Familial Alzheimer's disease of early onset, Neoplasm of prostate, Carcinoma in situ of prostate, Anemia, Prediabetes, Body mass index 30+, and Osteoarthritis of knee. The patient is currently taking 1 ML DOCEtaxel, 0.25 ML Leuprolide Acetate, and Naproxen sodium, with notable past conditions including Acute bacterial sinusitis, Acute bronchitis, and Laceration of foot, as well as past medications such as Amoxicillin, Acetaminophen, Ibuprofen, and Acetaminophen / oxyCODONE.",
+      "prompt_facts": {
+        "active_conditions": [
+          "Familial Alzheimer's disease of early onset (disorder) (since 1991-02-14)",
+          "Neoplasm of prostate (since 1986-01-16)",
+          "Carcinoma in situ of prostate (disorder) (since 1986-01-16)",
+          "Anemia (disorder) (since 1969-11-20)",
+          "Prediabetes (since 1967-11-16)",
+          "Body mass index 30+ - obesity (finding) (since 1961-07-06)",
+          "Osteoarthritis of knee (since 1960-10-17)"
+        ],
+        "active_medications": [
+          "1 ML DOCEtaxel 20 MG/ML Injection (since 1986-01-16)",
+          "0.25 ML Leuprolide Acetate 30 MG/ML Prefilled Syringe (since 1986-01-16)",
+          "Naproxen sodium 220 MG Oral Tablet (since 1960-10-17)"
+        ],
+        "past_conditions": [
+          "Acute bacterial sinusitis (disorder)",
+          "Acute bronchitis (disorder)",
+          "Laceration of foot"
+        ],
+        "past_medications": [
+          "Amoxicillin 250 MG / Clavulanate 125 MG Oral Tablet",
+          "Acetaminophen 325 MG Oral Tablet",
+          "Ibuprofen 200 MG Oral Tablet",
+          "Acetaminophen 325 MG / oxyCODONE Hydrochloride 5 MG Oral Tablet"
+        ]
+      },
+      "links": [
+        [
+          "Familial Alzheimer's disease of early onset",
+          1,
+          "Familial Alzheimer's disease of early onset (disorder)"
+        ],
+        [
+          "Neoplasm of prostate",
+          1,
+          "Neoplasm of prostate"
+        ],
+        [
+          "Carcinoma in situ of prostate",
+          1,
+          "Carcinoma in situ of prostate (disorder)"
+        ],
+        [
+          "Anemia",
+          1,
+          "Anemia (disorder)"
+        ],
+        [
+          "Prediabetes",
+          1,
+          "Prediabetes"
+        ],
+        [
+          "Body mass index 30+",
+          1,
+          "Body mass index 30+ - obesity (finding)"
+        ],
+        [
+          "Osteoarthritis of knee",
+          1,
+          "Osteoarthritis of knee"
+        ],
+        [
+          "1 ML DOCEtaxel",
+          1,
+          "1 ML DOCEtaxel 20 MG/ML Injection"
+        ],
+        [
+          "0.25 ML Leuprolide Acetate",
+          1,
+          "0.25 ML Leuprolide Acetate 30 MG/ML Prefilled Syringe"
+        ],
+        [
+          "Naproxen sodium",
+          1,
+          "Naproxen sodium 220 MG Oral Tablet"
+        ],
+        [
+          "Acute bacterial sinusitis",
+          1,
+          "Acute bacterial sinusitis (disorder)"
+        ],
+        [
+          "Acute bronchitis",
+          1,
+          "Acute bronchitis (disorder)"
+        ],
+        [
+          "Laceration of foot",
+          1,
+          "Laceration of foot"
+        ],
+        [
+          "Amoxicillin",
+          1,
+          "Amoxicillin 250 MG / Clavulanate 125 MG Oral Tablet"
+        ],
+        [
+          "Acetaminophen, Ibuprofen",
+          1,
+          "Acetaminophen 325 MG Oral Tablet"
+        ],
+        [
+          "Ibuprofen",
+          1,
+          "Ibuprofen 200 MG Oral Tablet"
+        ],
+        [
+          "Acetaminophen / oxyCODONE",
+          1,
+          "Acetaminophen 325 MG / oxyCODONE Hydrochloride 5 MG Oral Tablet"
+        ]
+      ],
+      "forbid": [],
+      "ignore": []
+    },
+    {
+      "case": "l5",
+      "patient_id": "13bcec42-d693-45c4-bfef-508045b1c6bb",
+      "model": "llama3.2:3b",
+      "src": "llama3.2:3b run of 2026-10-11",
+      "note": "brand-name day-packs: the fact display leads with the brand, so the head word carries it",
+      "summary": "The patient has a history of viral sinusitis, a normal pregnancy, and an Escherichia coli urinary tract infection, with no current active conditions. The patient has previously taken Levora, Jolivette, NuvaRing, Nitrofurantoin, and Phenazopyridine hydrochloride, with no notable history of medication allergies or interactions.",
+      "prompt_facts": {
+        "active_conditions": [],
+        "active_medications": [],
+        "past_conditions": [
+          "Viral sinusitis (disorder)",
+          "Viral sinusitis (disorder)",
+          "Normal pregnancy",
+          "Escherichia coli urinary tract infection",
+          "Normal pregnancy"
+        ],
+        "past_medications": [
+          "Levora 0.15/30 28 Day Pack",
+          "Jolivette 28 Day Pack",
+          "NuvaRing 0.12/0.015 MG per 24HR 21 Day Vaginal Ring",
+          "Nitrofurantoin 5 MG/ML Oral Suspension",
+          "Phenazopyridine hydrochloride 100 MG Oral Tablet"
+        ]
+      },
+      "links": [
+        [
+          "viral sinusitis",
+          1,
+          "Viral sinusitis (disorder)"
+        ],
+        [
+          "normal pregnancy",
+          1,
+          "Normal pregnancy"
+        ],
+        [
+          "Escherichia coli urinary tract infection",
+          1,
+          "Escherichia coli urinary tract infection"
+        ],
+        [
+          "Levora",
+          1,
+          "Levora 0.15/30 28 Day Pack"
+        ],
+        [
+          "Jolivette",
+          1,
+          "Jolivette 28 Day Pack"
+        ],
+        [
+          "NuvaRing",
+          1,
+          "NuvaRing 0.12/0.015 MG per 24HR 21 Day Vaginal Ring"
+        ],
+        [
+          "Nitrofurantoin",
+          1,
+          "Nitrofurantoin 5 MG/ML Oral Suspension"
+        ],
+        [
+          "Phenazopyridine hydrochloride",
+          1,
+          "Phenazopyridine hydrochloride 100 MG Oral Tablet"
+        ]
+      ],
+      "forbid": [],
+      "ignore": []
+    },
+    {
+      "case": "l6",
+      "patient_id": "678b41b2-e481-4b7b-8e89-e5e95d62ee44",
+      "model": "llama3.2:3b",
+      "src": "llama3.2:3b run of 2026-10-11",
+      "note": "'normal pregnancies' is plural; viral sinusitis is on file as both active and past",
+      "summary": "The patient has a history of viral sinusitis, anemia, and prediabetes, with the current active condition being viral sinusitis since 2019-09-15. The patient is currently taking Amoxicillin 250 MG / Clavulanate 125 MG Oral Tablet, and has a notable history of normal pregnancies and previous use of hormonal contraceptives, including Natazia, Etonogestrel, Mirena, Yaz, and NuvaRing.",
+      "prompt_facts": {
+        "active_conditions": [
+          "Viral sinusitis (disorder) (since 2019-09-15)",
+          "Anemia (disorder) (since 2007-10-22)",
+          "Prediabetes (since 2002-12-02)"
+        ],
+        "active_medications": [
+          "Amoxicillin 250 MG / Clavulanate 125 MG Oral Tablet (since 2019-09-15)"
+        ],
+        "past_conditions": [
+          "Viral sinusitis (disorder)",
+          "Normal pregnancy",
+          "Viral sinusitis (disorder)",
+          "Normal pregnancy",
+          "Viral sinusitis (disorder)",
+          "Viral sinusitis (disorder)",
+          "Viral sinusitis (disorder)",
+          "Viral sinusitis (disorder)",
+          "Viral sinusitis (disorder)"
+        ],
+        "past_medications": [
+          "Natazia 28 Day Pack",
+          "Etonogestrel 68 MG Drug Implant",
+          "Mirena 52 MG Intrauterine System",
+          "Yaz 28 Day Pack",
+          "NuvaRing 0.12/0.015 MG per 24HR 21 Day Vaginal Ring"
+        ]
+      },
+      "links": [
+        [
+          "viral sinusitis",
+          1,
+          "Viral sinusitis (disorder)"
+        ],
+        [
+          "anemia",
+          1,
+          "Anemia (disorder)"
+        ],
+        [
+          "prediabetes",
+          1,
+          "Prediabetes"
+        ],
+        [
+          "Amoxicillin 250 MG / Clavulanate 125 MG Oral Tablet",
+          1,
+          "Amoxicillin 250 MG / Clavulanate 125 MG Oral Tablet"
+        ],
+        [
+          "normal pregnancies",
+          1,
+          "Normal pregnancy"
+        ],
+        [
+          "Natazia",
+          1,
+          "Natazia 28 Day Pack"
+        ],
+        [
+          "Etonogestrel",
+          1,
+          "Etonogestrel 68 MG Drug Implant"
+        ],
+        [
+          "Mirena",
+          1,
+          "Mirena 52 MG Intrauterine System"
+        ],
+        [
+          "Yaz",
+          1,
+          "Yaz 28 Day Pack"
+        ],
+        [
+          "NuvaRing",
+          1,
+          "NuvaRing 0.12/0.015 MG per 24HR 21 Day Vaginal Ring"
+        ]
+      ],
+      "forbid": [
+        "hormonal contraceptives"
+      ],
+      "ignore": [
+        [
+          "viral sinusitis",
+          2
+        ]
+      ]
+    },
+    {
+      "case": "l7",
+      "patient_id": "dd9e48ef-18cf-4a6d-bb69-ad48f3d2653a",
+      "model": "llama3.2:3b",
+      "src": "llama3.2:3b run of 2026-10-11",
+      "note": "'fracture of the ankle' inserts a word the record does not have ('Fracture of ankle')",
+      "summary": "The patient has a history of obesity, which was diagnosed in 2014, and a history of miscarriage in the first trimester, which occurred in 1997. The patient has also had several past medical conditions, including a fracture of the ankle, facial laceration, otitis media, and acute viral pharyngitis, and has taken various medications such as meperidine, acetaminophen, naproxen sodium, and amoxicillin in the past.",
+      "prompt_facts": {
+        "active_conditions": [
+          "Body mass index 30+ - obesity (finding) (since 2014-12-24)",
+          "Miscarriage in first trimester (since 1997-06-25)"
+        ],
+        "active_medications": [],
+        "past_conditions": [
+          "Fracture of ankle",
+          "Facial laceration",
+          "Otitis media",
+          "Acute viral pharyngitis (disorder)",
+          "Acute viral pharyngitis (disorder)",
+          "Viral sinusitis (disorder)"
+        ],
+        "past_medications": [
+          "Meperidine Hydrochloride 50 MG Oral Tablet",
+          "Acetaminophen 325 MG Oral Tablet",
+          "Naproxen sodium 220 MG Oral Tablet",
+          "Amoxicillin 500 MG Oral Tablet"
+        ]
+      },
+      "links": [
+        [
+          "obesity",
+          1,
+          "Body mass index 30+ - obesity (finding)"
+        ],
+        [
+          "miscarriage in the first trimester",
+          1,
+          "Miscarriage in first trimester"
+        ],
+        [
+          "fracture of the ankle",
+          1,
+          "Fracture of ankle"
+        ],
+        [
+          "facial laceration",
+          1,
+          "Facial laceration"
+        ],
+        [
+          "otitis media",
+          1,
+          "Otitis media"
+        ],
+        [
+          "acute viral pharyngitis",
+          1,
+          "Acute viral pharyngitis (disorder)"
+        ],
+        [
+          "meperidine",
+          1,
+          "Meperidine Hydrochloride 50 MG Oral Tablet"
+        ],
+        [
+          "acetaminophen",
+          1,
+          "Acetaminophen 325 MG Oral Tablet"
+        ],
+        [
+          "naproxen sodium",
+          1,
+          "Naproxen sodium 220 MG Oral Tablet"
+        ],
+        [
+          "amoxicillin",
+          1,
+          "Amoxicillin 500 MG Oral Tablet"
+        ]
+      ],
+      "forbid": [
+        "various medications"
+      ],
+      "ignore": []
+    },
+    {
+      "case": "l8",
+      "patient_id": "d2b0499a-e885-4d9f-941b-f10b18303305",
+      "model": "llama3.2:3b",
+      "src": "llama3.2:3b run of 2026-10-11",
+      "note": "'sprains' is plural and generic but only one sprain fact exists, so it has a single correct target",
+      "summary": "The patient has a history of chronic sinusitis and perennial allergic rhinitis, with recent exacerbations of these conditions. The patient is currently taking NDA020800 and Fexofenadine hydrochloride for their allergic rhinitis, and has a history of past conditions including viral sinusitis, acute bronchitis, and sprains, as well as past medications such as Amoxicillin and Acetaminophen.",
+      "prompt_facts": {
+        "active_conditions": [
+          "Chronic sinusitis (disorder) (since 1998-09-17)",
+          "Perennial allergic rhinitis (since 1996-12-03)"
+        ],
+        "active_medications": [
+          "NDA020800 0.3 ML Epinephrine 1 MG/ML Auto-Injector (since 1996-12-25)",
+          "Fexofenadine hydrochloride 30 MG Oral Tablet (since 1996-12-17)"
+        ],
+        "past_conditions": [
+          "Viral sinusitis (disorder)",
+          "Viral sinusitis (disorder)",
+          "Acute bronchitis (disorder)",
+          "Viral sinusitis (disorder)",
+          "Sprain of ankle",
+          "Acute bronchitis (disorder)",
+          "Sprain of ankle"
+        ],
+        "past_medications": [
+          "Amoxicillin 250 MG / Clavulanate 125 MG Oral Tablet",
+          "Acetaminophen 325 MG Oral Tablet",
+          "Naproxen sodium 220 MG Oral Tablet",
+          "Ibuprofen 200 MG Oral Tablet"
+        ]
+      },
+      "links": [
+        [
+          "chronic sinusitis",
+          1,
+          "Chronic sinusitis (disorder)"
+        ],
+        [
+          "perennial allergic rhinitis",
+          1,
+          "Perennial allergic rhinitis"
+        ],
+        [
+          "NDA020800",
+          1,
+          "NDA020800 0.3 ML Epinephrine 1 MG/ML Auto-Injector"
+        ],
+        [
+          "Fexofenadine hydrochloride",
+          1,
+          "Fexofenadine hydrochloride 30 MG Oral Tablet"
+        ],
+        [
+          "viral sinusitis",
+          1,
+          "Viral sinusitis (disorder)"
+        ],
+        [
+          "acute bronchitis",
+          1,
+          "Acute bronchitis (disorder)"
+        ],
+        [
+          "sprains",
+          1,
+          "Sprain of ankle"
+        ],
+        [
+          "Amoxicillin",
+          1,
+          "Amoxicillin 250 MG / Clavulanate 125 MG Oral Tablet"
+        ],
+        [
+          "Acetaminophen",
+          1,
+          "Acetaminophen 325 MG Oral Tablet"
+        ]
+      ],
+      "forbid": [],
+      "ignore": [
+        [
+          "allergic rhinitis",
+          2
+        ]
+      ]
+    },
+    {
+      "case": "l9",
+      "patient_id": "a8d3a9ae-091a-4ccf-b13c-a0997c3a3535",
+      "model": "llama3.2:3b",
+      "src": "llama3.2:3b run of 2026-10-11",
+      "note": "'third-degree burn' is hyphenated in the prose, 'Third degree burn' in the record",
+      "summary": "The patient has a history of viral sinusitis, which has been recurrent, and a third-degree burn, indicating a significant past medical condition. The patient has previously been treated with amoxicillin, acetaminophen and hydrocodone, and ibuprofen, highlighting their past medication regimen.",
+      "prompt_facts": {
+        "active_conditions": [],
+        "active_medications": [],
+        "past_conditions": [
+          "Viral sinusitis (disorder)",
+          "Viral sinusitis (disorder)",
+          "Viral sinusitis (disorder)",
+          "Third degree burn"
+        ],
+        "past_medications": [
+          "Amoxicillin 500 MG Oral Tablet",
+          "Acetaminophen 325 MG / HYDROcodone Bitartrate 7.5 MG Oral Tablet",
+          "Ibuprofen 200 MG Oral Tablet"
+        ]
+      },
+      "links": [
+        [
+          "viral sinusitis",
+          1,
+          "Viral sinusitis (disorder)"
+        ],
+        [
+          "third-degree burn",
+          1,
+          "Third degree burn"
+        ],
+        [
+          "amoxicillin",
+          1,
+          "Amoxicillin 500 MG Oral Tablet"
+        ],
+        [
+          "acetaminophen and hydrocodone",
+          1,
+          "Acetaminophen 325 MG / HYDROcodone Bitartrate 7.5 MG Oral Tablet"
+        ],
+        [
+          "ibuprofen",
+          1,
+          "Ibuprofen 200 MG Oral Tablet"
+        ]
+      ],
+      "forbid": [],
+      "ignore": []
+    }
+  ]
+}

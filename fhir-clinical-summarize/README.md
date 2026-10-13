@@ -5,7 +5,7 @@ Assembles a source-cited clinical packet from a FHIR server, summarized by a loc
 Before a prior-authorization request can be reviewed, someone has to pull the patient's
 history together out of scattered records. This service does that assembly: it reads a
 patient's conditions and medications from a FHIR server, turns them into facts that each
-carry the id of the record they came from, and asks a local 3B model to write two sentences
+carry the id of the record they came from, and asks a local 3B model to write a few sentences
 a reviewer can scan.
 
 **Every fact is traceable.** A reviewer can take any `source` in the response and read the
@@ -29,6 +29,7 @@ flowchart LR
     C["fhir_client.py<br/>search + paging"]
     E["extract.py<br/>facts · sources · dedupe"]
     L["summarize.py<br/>gemma3:4b via Ollama<br/>JSON schema output"]
+    K["link.py<br/>prose → facts<br/>exact, deterministic"]
     P["GET /patients/{id}/packet"]
 
     S -->|"load_synthea.py<br/>PUT transaction"| H
@@ -36,13 +37,20 @@ flowchart LR
     C --> E
     E -->|"facts + sources<br/>(deterministic)"| P
     E -->|"display strings only,<br/>no sources"| L
-    L -->|"summary prose"| P
+    L -->|"summary prose"| K
+    E -->|"facts + sources"| K
+    K -->|"citations<br/>(offsets + source)"| P
 ```
 
 The split in the middle is the point of the design. Facts, statuses, dates and source
 references are settled by deterministic Python before the model is called, and the model's
 output is only ever assigned to `summary`. The model never sees a resource id, so it cannot
 fabricate a citation, and an LLM failure costs the prose rather than the evidence.
+
+`link.py` is what closes the loop: it reads the prose the model just wrote, matches terms in
+it against facts that already carry their sources, and returns character offsets. So the
+sentences are cited too, not just the tables — and still without the model ever emitting a
+reference.
 
 ---
 
@@ -91,6 +99,10 @@ curl -s "localhost:8000/patients/632b7c1c-9545-4aa7-9fd5-07683139ef13/packet" | 
 
 # verify a citation by hand -- what a reviewer would do
 curl -s "localhost:8080/fhir/Condition/ce034b73-37e8-489c-bd6f-9c52a08ff605" | jq .
+
+# or follow the prose: every underlined term in the summary carries its source
+curl -s "localhost:8000/patients/78378d37-92b5-4d2e-8f6c-b8f5e79f3999/packet" \
+  | jq -r '.citations[] | "\(.text)  ->  \(.source)"'
 ```
 
 ---
@@ -102,7 +114,7 @@ curl -s "localhost:8080/fhir/Condition/ce034b73-37e8-489c-bd6f-9c52a08ff605" | j
 | `GET /health` | liveness |
 | `GET /patients` | search by **any** FHIR `Patient` search parameter |
 | `GET /patients/{id}` | one patient summary |
-| `GET /patients/{id}/packet` | **the deliverable** — facts, sources, summary, missing |
+| `GET /patients/{id}/packet` | **the deliverable** — facts, sources, summary, citations, missing |
 | `GET /ui/` | React dashboard |
 | `GET /docs` | OpenAPI |
 
@@ -146,6 +158,12 @@ curl -G localhost:8000/patients \
       "status": "stopped", "date": "2012-08-14" }
   ],
   "summary": "The patient has a history of viral sinusitis and acute bronchitis, but currently has no active conditions. The patient has previously taken acetaminophen for symptom relief...",
+  "citations": [
+    { "start": 29, "end": 44, "text": "viral sinusitis",
+      "source": "Condition/04a5822d-8a5c-4f0c-a900-035574d639cb" },
+    { "start": 160, "end": 173, "text": "acetaminophen",
+      "source": "MedicationRequest/7371bd7b-0b35-42a1-8b1d-30a3565a5189" }
+  ],
   "missing": ["No active conditions on file", "No active medications on file"]
 }
 ```
@@ -225,6 +243,51 @@ given only the status writes it up as a present-day problem.
 Asked to report an absence, a small model will sometimes report a presence. The deterministic
 layer emits `"No medications on file"` / `"No active conditions on file"`.
 
+### Citations are matched, never generated
+
+The prose is the one part of a packet a model wrote, so the links out of it are resolved the
+same way as everything else: deterministically, afterwards, from facts that already carry
+their sources. `app/link.py` offers each fact a few names a summary might use for it, finds
+those names in the text, and returns `{start, end, text, source}` per mention.
+
+The names come from how the two code systems actually write a display, measured against the
+summaries in `eval_output/`:
+
+| Record | Terms offered |
+|---|---|
+| `Viral sinusitis (disorder)` | the SNOMED semantic tag is dropped |
+| `Body mass index 30+ - obesity (finding)` | **both** halves; one code naming two things |
+| `Non-small cell carcinoma of lung, TNM stage 1` | the head too, since prose drops staging |
+| `Sertraline 100MG` | the drug name without its strength |
+| `Acetaminophen 325 MG / HYDROcodone Bitartrate 7.5 MG` | each ingredient, and each one's first word |
+| `NDA020800 0.3 ML Epinephrine 1 MG/ML Auto-Injector` | the product code **and** `Epinephrine` |
+| `Yaz 28 Day Pack` | the brand alone |
+
+Matching is case-insensitive (RxNorm ships tall-man casing — `PACLitaxel`, `DOCEtaxel` — that
+no summary reproduces), tolerates a hyphen where the record has a space (`third-degree burn`
+vs `Third degree burn`), an article the display does not carry (`fracture of the ankle` vs
+`Fracture of ankle`), and an English plural (`normal pregnancies` vs `Normal pregnancy`).
+
+**What it deliberately will not do is guess.** `prostate neoplasm` and the record's
+`Neoplasm of prostate` are the same condition, and linking them means reordering words;
+`Simvastatin` in prose against `Simvistatin 10 MG` on file is a one-letter difference that
+could as easily be a different drug. Both are left as plain text. An unlinked word costs a
+reviewer a glance at the table below; a wrong link costs them the review.
+
+Two ambiguities had to be resolved rather than avoided, because the sample set contains both:
+
+- **Two episodes of one illness** share every term, so every mention cites the newest — the
+  same record `_dedupe` kept the source of.
+- **One ingredient in two products** (a plain acetaminophen tablet and an
+  acetaminophen/oxycodone tablet) means successive mentions cite successive products, so the
+  sentence "Acetaminophen, Ibuprofen, and Acetaminophen / oxyCODONE" cites each record once
+  instead of citing the tablet twice.
+
+Spans are recomputed on every request, including cache hits, rather than stored next to the
+prose. They are a pure function of this summary and these facts, cost well under a
+millisecond, and keeping them derived means there is no second artefact that can drift out of
+step with the text it points into.
+
 ### Failure modes degrade rather than propagate
 
 - `summarize.write_summary()` **never raises.** Timeout, malformed JSON, or schema violation
@@ -260,7 +323,7 @@ Reasons a small local model fits the job:
 
 - The task after shaping is **writing, not reasoning**. The hard decisions — what is active,
   what deduplicates, what is missing — are made in Python. The model is being asked to turn
-  four short lists into two sentences.
+  four short lists into two to four sentences.
 - **~460 prompt tokens** means a small model is the right one; nothing here benefits from a
   larger context or deeper reasoning. It advertises a 131,072-token context against
   Ollama's 4096 default, so `num_ctx` is set explicitly rather than inherited.
@@ -405,7 +468,7 @@ that are on the server but outside that file (the 301-vs-299 gap).
 | Postgres size | **832 MB** for 301 patients (~2.8 MB/patient → ~3.3 GB for all 1,180) |
 | Load throughput | ~2.1 s per bundle → the full 1,180 would take roughly 40 minutes |
 | Packet latency | **3–8 s** warm, ~28 s on the first call while `gemma3:4b` loads |
-| Tests | 20, all deterministic (no FHIR server, no model) |
+| Tests | 73, all deterministic (no FHIR server, no model) |
 
 A representative sample was loaded rather than all 1,180: the hand review covers 10
 patients, the endpoint serves one at a time, and clinical variety saturates well before 300.
@@ -452,7 +515,7 @@ run to run. All three edge patients are on the server but absent from
 Mechanically checked: every `Fact.source` is **read back from FHIR** and re-extracted to
 confirm it still carries the `display` the packet cites it for; doses in the prose must
 appear in the payload; dosing *frequencies* must not appear at all, since nothing upstream
-emits one; no approve/deny/authorize language; two sentences, no bullets.
+emits one; no approve/deny/authorize language; two to four sentences, no bullets.
 
 **Results, 10 patients, `gemma3:4b` at `temperature: 0`:**
 
@@ -479,6 +542,38 @@ a person.
 
 > **Still open:** the `Verdict` lines on the worksheet are blank. The counts above are the
 > mechanical half; a clinician reading the 10 summaries is the half that decides.
+
+### Citation coverage, measured against a labelled set
+
+The linker was built against a hand-labelled set rather than by eye:
+**13 real summaries** (the 10 in `eval-llama3.2-3b.json` plus the 3 in `eval-gemma3-4b.json`)
+with **117 mentions labelled by hand** with the fact each one should cite, plus phrases that
+must stay unlinked. `python -m scripts.eval_citations` reproduces the run.
+
+| | |
+|---|---|
+| Links produced | **115** |
+| …pointing at the wrong fact | **0** |
+| …on a phrase that names no fact ("antibiotics", "various medications") | **0** |
+| Labelled mentions linked | **113 / 117** (96.6%) |
+| Links whose span is wider than the phrase | **0** |
+| Cost | well under 1 ms per summary |
+
+The four misses are the linker refusing rather than failing:
+
+| Prose | Record | Why it stays unlinked |
+|---|---|---|
+| "prostate neoplasm" ×2 | `Neoplasm of prostate` | resolving it means reordering words |
+| "viral pharyngitis" | `Acute viral pharyngitis` | dropping a leading qualifier would also merge `Chronic sinusitis` with `Sinusitis`, which are two different facts on one patient |
+| "sprains" | `Sprain of ankle` | plural *and* the site dropped |
+
+Checked against the live stack as well: on `78378d37-…` all **8** citations were re-fetched
+from HAPI and still carried the display the packet cited them for, and the rendered summary
+concatenates back to a string byte-identical to `summary`, so no link is displaced.
+
+> **Caveat worth stating plainly:** those rules were tightened against this set's own errors,
+> so the precision figure is in-sample. The gold set and the scorer are in the repo precisely
+> so it can be re-run on fresh summaries, which is what would make it a clean number.
 
 ---
 
@@ -523,9 +618,16 @@ The assignment asks where the code came from. Honestly:
 **Machine-generated.** Effectively all of the Python, the shell script, and the React page
 were written by **Claude (Claude Code, Opus)** in an interactive session, under my direction
 — I specified the goals, chose between the options it presented, and reviewed the output.
-That includes `app/extract.py`, `app/summarize.py`, `app/fhir_client.py`, `app/main.py`,
-`app/models.py`, `scripts/load_bundle.py`, `scripts/load_synthea.py`,
-`scripts/show_conditions.sh`, `tests/test_extract.py`, `ui/index.html`, and this README.
+That includes `app/extract.py`, `app/summarize.py`, `app/link.py`, `app/fhir_client.py`,
+`app/main.py`, `app/models.py`, `scripts/load_bundle.py`, `scripts/load_synthea.py`,
+`scripts/eval_citations.py`, `scripts/show_conditions.sh`, `tests/test_extract.py`,
+`tests/test_link.py`, `tests/test_packet_route.py`, `ui/index.html`, and this README.
+
+**Hand-labelled, not generated.** `tests/data/citation_gold.json` is the one artefact in the
+repo that is a judgment rather than code: 117 mentions across 13 real summaries, each labelled
+with the fact it should cite, including the calls that went the other way (a bare "sinusitis"
+on a patient with four sinusitis facts links to nothing). Every case carries a `note` saying
+why, so the labelling is reviewable rather than taken on trust.
 
 **Human-authored.** `docker-compose.yml`, `pyproject.toml`, `app/config.py` and the original
 module scaffolding predate that session.
@@ -555,10 +657,11 @@ React 18 and Babel are loaded from cdnjs at runtime.
 ```
 app/
   config.py        settings, env-overridable (FHIR_BASE_URL, OLLAMA_MODEL, ...)
-  models.py        Fact, Packet, PatientSummary, PatientPage -- the response contract
+  models.py        Fact, Span, Packet, PatientSummary, PatientPage -- the response contract
   fhir_client.py   HTTP to HAPI: reads, searches, paging, capability lookup
   extract.py       FHIR -> facts + sources + dedupe + missing + prompt shaping (no LLM)
   summarize.py     Ollama structured output; never raises
+  link.py          summary prose -> the facts it cites, as offsets (no LLM)
   summary_cache.py one cached summary per patient, keyed on a hash of their facts
   main.py          FastAPI routes
 scripts/
@@ -567,10 +670,14 @@ scripts/
   cache_admin.py   --stats / --clear for the summary cache
   eval_sample.py   10-patient hand review: resolves every citation against FHIR,
                    scores the checkable, stages the judgment calls. No LLM judge
+  eval_citations.py    scores app/link.py against the labelled citation set
   show_conditions.sh   spot-check one patient's conditions and sources from the CLI
 tests/
   test_extract.py  20 tests over the deterministic layer
+  test_link.py     42 tests over the citation linker -- terms, spans, invariants
+  test_packet_route.py   6 tests over how the route assembles facts, prose, citations
   test_summary_cache.py  11 tests over the cache key -- no Postgres, no model
+  data/citation_gold.json  117 mentions in 13 real summaries, labelled by hand
 ui/index.html      single-file React dashboard
 docker-compose.yml HAPI FHIR 8.12 + Postgres 14
 ```

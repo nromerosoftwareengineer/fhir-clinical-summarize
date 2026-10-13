@@ -227,7 +227,20 @@ curl -s "http://$IP/patients?limit=3" | jq .total
 curl -s "http://$IP/fhir/metadata" | jq -r .software.version
 ```
 
-Then open **`http://$IP/ui/`**. Expect 10-30 s per packet on CPU.
+Check that the prose is cited, not just the tables:
+
+```bash
+curl -s "http://$IP/patients/78378d37-92b5-4d2e-8f6c-b8f5e79f3999/packet" \
+  | jq -r '.citations[] | "\(.text)  ->  \(.source)"'
+```
+
+Expect one line per term the summary named. An empty list means the summary came
+back empty (check `/ready`), since `app/link.py` needs no configuration of its
+own -- it runs in-process, in under a millisecond, with no model call.
+
+Then open **`http://$IP/ui/`**. Expect 10-30 s per packet on CPU, and ~1 s for a
+patient whose summary is already cached. In the summary, the underlined terms
+jump to the row they came from.
 
 ## 12. TLS (optional)
 

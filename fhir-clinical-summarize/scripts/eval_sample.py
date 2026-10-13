@@ -16,7 +16,8 @@ Checked mechanically, reported as counts:
   gemma3:4b turned ``"Lisinopril 10 mg"`` into "prescribed Lisinopril 10 mg
   daily"; nothing upstream emits a frequency, so any is fabricated.
 - the summary contains no approve/deny/authorize language.
-- the summary is two sentences of prose with no bullet characters.
+- the summary is two to four sentences of prose with no bullet characters,
+  the bound the system prompt asks for.
 
 Left to the reviewer, because no string check catches it:
 
@@ -75,6 +76,11 @@ DEFAULT_IDS_FILE = pathlib.Path("data/patient_ids.txt")
 # and data/ stays reserved for the Synthea download.
 DEFAULT_OUT_DIR = pathlib.Path("eval_output")
 DEFAULT_SAMPLE = 10
+
+# What SYSTEM_PROMPT asks for: active conditions, active medications, and a
+# history sentence only when there is history to report.
+MIN_SENTENCES = 2
+MAX_SENTENCES = 4
 DEFAULT_SEED = 0
 
 # The service assembles evidence and never issues a decision, so any of these in
@@ -259,8 +265,14 @@ def mechanical_failures(checks: dict, source_failures: list[str]) -> list[str]:
         failures.append(f"invented dosing frequency: {term!r}")
     for dose in checks["ungrounded_doses"]:
         failures.append(f"dose not in payload: {dose!r}")
-    if checks["sentences"] != 2:
-        failures.append(f"expected 2 sentences, got {checks['sentences']}")
+    # The bound comes from SYSTEM_PROMPT, which asks for two to four sentences:
+    # one for active conditions, one for active medications, and a third only
+    # when the record has history. Checking an exact count would fail a patient
+    # with nothing in their past for writing the honest two.
+    if not MIN_SENTENCES <= checks["sentences"] <= MAX_SENTENCES:
+        failures.append(
+            f"expected {MIN_SENTENCES}-{MAX_SENTENCES} sentences, got {checks['sentences']}"
+        )
     if checks["has_bullets"]:
         failures.append("summary contains bullet characters")
 
@@ -333,7 +345,7 @@ def write_markdown(path: pathlib.Path, model: str, results: list[dict], totals: 
             "",
             f"- sources resolved: **{result['sources_resolved']}/{result['sources_total']}**",
             (f"- sentences: {checks['sentences']}"
-             f"{' ⚠️' if not checks['empty'] and checks['sentences'] != 2 else ''}"),
+             f"{' ⚠️' if not checks['empty'] and not MIN_SENTENCES <= checks['sentences'] <= MAX_SENTENCES else ''}"),
             f"- decision language: {checks['decision_terms'] or 'none'}",
             f"- invented frequency: {checks['invented_frequency'] or 'none'}",
             f"- ungrounded doses: {checks['ungrounded_doses'] or 'none'}",

@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import extract, summarize, summary_cache
+from app import extract, link, summarize, summary_cache
 from app.config import settings
 from app.fhir_client import RESULT_PARAMS, FhirError, FhirNotFound, fhir
 from app.logging_config import setup_logging
@@ -190,6 +190,9 @@ def get_packet(patient_id: str) -> Packet:
     The order matters: facts, statuses and source references are all settled
     before the model is called, and the model's output is only ever assigned to
     `summary`. A summary failure therefore costs the prose, not the evidence.
+    The citations are resolved after the fact, by matching the prose against
+    facts that already carry their sources, so the model never emits a
+    reference and cannot fabricate one.
     This service assembles evidence. It never issues an authorization decision.
     """
     try:
@@ -212,6 +215,12 @@ def get_packet(patient_id: str) -> Packet:
         conditions=conditions,
         medications=medications,
         summary=summary,
+        # Recomputed per request rather than cached with the prose: the spans are
+        # a pure function of this summary and these facts, so a cache hit that
+        # matched on fact_hash yields identical spans for well under a
+        # millisecond, and there is no second artefact that can fall out of step
+        # with the text it points into.
+        citations=link.find_spans(summary, conditions, medications),
         missing=extract.build_missing(conditions, medications),
     )
 

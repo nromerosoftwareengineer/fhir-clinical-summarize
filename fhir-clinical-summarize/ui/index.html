@@ -157,6 +157,23 @@
     background: var(--accent-soft); border-left: 3px solid var(--accent);
     padding: 12px 14px; border-radius: 4px; font-size: 14px; line-height: 1.55;
   }
+  /* A cited mention. Dotted rather than solid: it is a jump to the evidence
+     below, not a navigation away from the packet. */
+  .cite {
+    font: inherit; color: inherit; background: none; border: 0; padding: 0;
+    cursor: pointer; text-decoration: underline dotted var(--accent);
+    text-underline-offset: 3px;
+  }
+  .cite:hover, .cite:focus-visible {
+    color: var(--accent); background: var(--accent-soft); outline: none;
+  }
+  /* Where the jump lands, so the row the prose cited is obvious for a moment
+     without staying highlighted and competing with the status badges. */
+  tr.flash td { animation: flash 1.4s ease-out; }
+  @keyframes flash {
+    from { background: var(--accent-soft); }
+    to { background: transparent; }
+  }
   .sect-h {
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
     color: var(--muted); font-weight: 600; margin: 20px 0 8px;
@@ -391,6 +408,57 @@ function highlightJson(value) {
   return out;
 }
 
+// A row id the prose can jump to. "/" is not valid in one, and the source is
+// unique per fact, so this is a stable address for the evidence of one claim.
+const rowId = (source) => "fact-" + source.replace("/", "-");
+
+function jumpToFact(source) {
+  const row = document.getElementById(rowId(source));
+  if (!row) return;
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.classList.add("flash");
+  setTimeout(() => row.classList.remove("flash"), 1400);
+}
+
+// The summary with its citations rendered as links into the fact tables below.
+//
+// Rendered by slicing on the offsets the API returned rather than by searching
+// the text here: the same word can appear twice and mean two different records,
+// and re-deriving the match in the browser would be a second implementation of
+// app/link.py that could disagree with the one that was tested.
+//
+// Any citation whose offsets do not slice back to their own text is skipped
+// rather than rendered, because a displaced span would shift every link after
+// it. An unlinked word is the honest failure here; a misplaced link is not.
+function LinkedSummary({ summary, citations, facts }) {
+  const byFact = new Map(facts.map((fact) => [fact.source, fact]));
+  const usable = (citations || [])
+    .filter((cite) => summary.slice(cite.start, cite.end) === cite.text)
+    .sort((a, b) => a.start - b.start);
+
+  const out = [];
+  let at = 0;
+  usable.forEach((cite, index) => {
+    if (cite.start < at) return; // overlapping, already rendered
+    if (cite.start > at) out.push(summary.slice(at, cite.start));
+    const fact = byFact.get(cite.source);
+    out.push(
+      <button
+        key={index}
+        className="cite"
+        onClick={() => jumpToFact(cite.source)}
+        title={fact ? `${fact.display} — ${cite.source}` : cite.source}
+      >
+        {cite.text}
+      </button>
+    );
+    at = cite.end;
+  });
+  out.push(summary.slice(at));
+
+  return <div className="summary-box">{out}</div>;
+}
+
 function FactTable({ title, facts, fhirBase }) {
   if (!facts) return null;
   return (
@@ -402,7 +470,7 @@ function FactTable({ title, facts, fhirBase }) {
         <table>
           <tbody>
             {facts.map((fact) => (
-              <tr key={fact.source} style={{ cursor: "default" }}>
+              <tr id={rowId(fact.source)} key={fact.source} style={{ cursor: "default" }}>
                 <td>{fact.display}</td>
                 <td style={{ width: 92 }}>
                   {fact.status && (
@@ -481,7 +549,11 @@ function PacketPanel({ result, fhirBase }) {
       ) : (
         <>
           {packet.summary ? (
-            <div className="summary-box">{packet.summary}</div>
+            <LinkedSummary
+              summary={packet.summary}
+              citations={packet.citations}
+              facts={packet.conditions.concat(packet.medications)}
+            />
           ) : (
             <div className="count">No summary available (the model did not return one).</div>
           )}
@@ -504,7 +576,8 @@ function PacketPanel({ result, fhirBase }) {
 
       <div className="meta">
         {packet.conditions.length} conditions · {packet.medications.length} medications ·
-        built in {result.ms} ms · every row links to the record it came from
+        {" "}{(packet.citations || []).length} citations · built in {result.ms} ms ·
+        every row and every underlined term links to the record it came from
       </div>
     </div>
   );

@@ -47,7 +47,15 @@ class Settings(BaseSettings):
     summary_db_timeout_s: float = 3.0
 
     # -- behaviour --------------------------------------------------------
-    request_timeout_s: float = 60.0
+    # Shared by the FHIR client and the model call, and sized for the model: a
+    # FHIR search returns in well under a second, while inference is tens of
+    # seconds. 60 was too tight once the prompt asked for a history sentence --
+    # a cold call on an M2 measured 60.8 s (~28 s to load gemma3:4b, the rest
+    # generating), hit the ceiling, and the packet shipped with an empty summary.
+    # That degradation is correct but it is not what a reviewer should see, so
+    # the ceiling now sits above the cold path rather than inside it. The
+    # compose overlay raises it again to 180 for CPU-only hosts.
+    request_timeout_s: float = 120.0
 
     # JSON lines rather than human-readable text. Off locally, on in a
     # container, so Log Analytics / App Insights can parse the fields.

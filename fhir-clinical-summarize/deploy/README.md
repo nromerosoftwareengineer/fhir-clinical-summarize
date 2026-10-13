@@ -151,7 +151,9 @@ model in the VNet rather than calling an external API.
 
 **CI/CD.** GitHub Actions with OIDC federated credentials (no stored secrets):
 `pytest` and `ruff` as gates, then `az acr build` and `az containerapp update`.
-The 20 tests need no FHIR server and no model, so they run in CI as-is.
+The 73 tests need no FHIR server and no model, so they run in CI as-is, and so
+does `python -m scripts.eval_citations`: it carries its own prose and facts and
+exits non-zero if any citation links to the wrong record.
 
 **Infrastructure as code.** The `az` commands above should become Bicep or
 Terraform before anyone deploys this for real.
